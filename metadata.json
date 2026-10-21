@@ -1,0 +1,6 @@
+{
+  "name": "REVORA - Automotive Culture & Streetwear",
+  "description": "Automotive culture, car enthusiasts, premium streetwear, and performance-inspired clothing crafted for those who live the drive.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
