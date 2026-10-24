@@ -10,11 +10,17 @@ import {
   CustomerComplaint,
 } from '../types';
 
-export const INITIAL_HERO_IMAGE = '/src/assets/images/hero_banner_automotive_1791711104210.jpg';
-export const IMG_HOODIE_TACH = '/src/assets/images/product_hoodie_tachometer_1791711123641.jpg';
-export const IMG_TEE_APEX = '/src/assets/images/product_oversized_tee_apex_1791711138260.jpg';
-export const IMG_JACKET_TRACK = '/src/assets/images/product_jacket_monochrome_track_1791711152470.jpg';
-export const IMG_WINTER_COLLECTION = '/src/assets/images/category_winter_collection_1791711166318.jpg';
+import heroBannerImg from '../assets/images/hero_banner_automotive_1791711104210.jpg';
+import hoodieTachImg from '../assets/images/product_hoodie_tachometer_1791711123641.jpg';
+import teeApexImg from '../assets/images/product_oversized_tee_apex_1791711138260.jpg';
+import jacketTrackImg from '../assets/images/product_jacket_monochrome_track_1791711152470.jpg';
+import winterCollectionImg from '../assets/images/category_winter_collection_1791711166318.jpg';
+
+export const INITIAL_HERO_IMAGE = heroBannerImg;
+export const IMG_HOODIE_TACH = hoodieTachImg;
+export const IMG_TEE_APEX = teeApexImg;
+export const IMG_JACKET_TRACK = jacketTrackImg;
+export const IMG_WINTER_COLLECTION = winterCollectionImg;
 
 export const INITIAL_CATEGORIES: Category[] = [
   { id: 'cat-hoodies', name: 'Hoodies', slug: 'hoodies', description: 'Heavyweight brushed fleece hoodies with precision automotive graphics.', isFeatured: true, itemCount: 4, order: 1, image: IMG_HOODIE_TACH },

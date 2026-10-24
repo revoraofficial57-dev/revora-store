@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useStore } from '../../context/StoreContext';
+import { useAdmin } from '../../context/AdminContext';
 import { saveStoreSettings, runRetentionCleanupTask } from '../../services/storage';
 import { sendTestGmailEmail, generateOrderEmailHtml } from '../../services/gmailService';
 import { getCurrentUser, logoutGoogle } from '../../services/gmailAuth';
@@ -23,10 +24,14 @@ import {
   X,
   ExternalLink,
   LogOut,
+  Lock,
+  Key,
+  AlertTriangle,
 } from 'lucide-react';
 
 export const AdminSettings: React.FC = () => {
   const { settings, refreshData, showToast } = useStore();
+  const { username: currentAdminUser, isCustomPasswordSet, changePassword } = useAdmin();
 
   const [form, setForm] = useState<StoreSettings>({ ...settings });
   const [retentionResult, setRetentionResult] = useState<{ anonymizedCount: number; evaluatedOrders: number } | null>(null);
@@ -37,6 +42,42 @@ export const AdminSettings: React.FC = () => {
   const [testEmailResult, setTestEmailResult] = useState<{ success: boolean; message: string } | null>(null);
   const [showTemplatePreview, setShowTemplatePreview] = useState(false);
   const [currentUser, setCurrentUser] = useState(() => getCurrentUser());
+
+  // Admin Master Password Management State
+  const [adminUsernameInput, setAdminUsernameInput] = useState(currentAdminUser || 'revora_admin');
+  const [newAdminPassword, setNewAdminPassword] = useState('');
+  const [confirmAdminPassword, setConfirmAdminPassword] = useState('');
+  const [passwordChangeSuccess, setPasswordChangeSuccess] = useState<string | null>(null);
+  const [passwordChangeError, setPasswordChangeError] = useState<string | null>(null);
+  const [isUpdatingPassword, setIsUpdatingPassword] = useState(false);
+
+  const handleUpdateAdminPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setPasswordChangeSuccess(null);
+    setPasswordChangeError(null);
+
+    if (!newAdminPassword || newAdminPassword.length < 6) {
+      setPasswordChangeError('New password must be at least 6 characters.');
+      return;
+    }
+    if (newAdminPassword !== confirmAdminPassword) {
+      setPasswordChangeError('New passwords do not match.');
+      return;
+    }
+
+    setIsUpdatingPassword(true);
+    try {
+      await changePassword(adminUsernameInput.trim() || 'revora_admin', newAdminPassword);
+      setPasswordChangeSuccess('Admin credentials updated! All default passwords and public login helpers are now permanently disabled.');
+      setNewAdminPassword('');
+      setConfirmAdminPassword('');
+      showToast('Master password successfully changed!');
+    } catch (err: any) {
+      setPasswordChangeError(err?.message || 'Failed to update credentials.');
+    } finally {
+      setIsUpdatingPassword(false);
+    }
+  };
 
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault();
@@ -968,6 +1009,94 @@ export const AdminSettings: React.FC = () => {
                 Evaluated: {retentionResult.evaluatedOrders} orders · Anonymized: {retentionResult.anonymizedCount} records
               </span>
             )}
+          </div>
+        </div>
+
+        {/* Administrator Portal Security & Master Password */}
+        <div className="bg-neutral-950 border border-neutral-800 p-6 rounded-xs space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-neutral-800 pb-3">
+            <div>
+              <h3 className="text-sm font-bold text-white uppercase font-display tracking-wider flex items-center gap-2">
+                <Lock className="w-4 h-4 text-amber-400" />
+                <span>Administrator Account & Master Password</span>
+              </h3>
+              <p className="text-[11px] text-neutral-400 mt-0.5">
+                Set your private credentials to lock down the admin portal and prevent unauthorized access.
+              </p>
+            </div>
+            {isCustomPasswordSet ? (
+              <span className="text-[10px] font-mono text-emerald-300 bg-emerald-950/80 border border-emerald-800 px-2.5 py-1 rounded-xs flex items-center gap-1.5 w-fit">
+                <Shield className="w-3.5 h-3.5 text-emerald-400" />
+                <span>Custom Password Active (Secured)</span>
+              </span>
+            ) : (
+              <span className="text-[10px] font-mono text-amber-300 bg-amber-950/80 border border-amber-800 px-2.5 py-1 rounded-xs flex items-center gap-1.5 w-fit">
+                <AlertTriangle className="w-3.5 h-3.5 text-amber-400" />
+                <span>Default Password Active (Action Recommended)</span>
+              </span>
+            )}
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div>
+              <label className="block text-neutral-400 text-xs mb-1">Admin Username</label>
+              <input
+                type="text"
+                value={adminUsernameInput}
+                onChange={(e) => setAdminUsernameInput(e.target.value)}
+                placeholder="e.g. revora_owner"
+                className="w-full bg-neutral-900 border border-neutral-800 text-white p-2.5 rounded-xs font-mono text-xs focus:outline-none focus:border-white"
+              />
+            </div>
+            <div>
+              <label className="block text-neutral-400 text-xs mb-1">New Master Password</label>
+              <input
+                type="password"
+                value={newAdminPassword}
+                onChange={(e) => setNewAdminPassword(e.target.value)}
+                placeholder="Min 6 characters"
+                className="w-full bg-neutral-900 border border-neutral-800 text-white p-2.5 rounded-xs font-mono text-xs focus:outline-none focus:border-white"
+              />
+            </div>
+            <div>
+              <label className="block text-neutral-400 text-xs mb-1">Confirm New Password</label>
+              <input
+                type="password"
+                value={confirmAdminPassword}
+                onChange={(e) => setConfirmAdminPassword(e.target.value)}
+                placeholder="Re-enter password"
+                className="w-full bg-neutral-900 border border-neutral-800 text-white p-2.5 rounded-xs font-mono text-xs focus:outline-none focus:border-white"
+              />
+            </div>
+          </div>
+
+          {passwordChangeSuccess && (
+            <div className="p-3 bg-emerald-950/60 border border-emerald-800 text-emerald-200 text-xs rounded-xs flex items-center gap-2 font-mono">
+              <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+              <span>{passwordChangeSuccess}</span>
+            </div>
+          )}
+
+          {passwordChangeError && (
+            <div className="p-3 bg-red-950/60 border border-red-800 text-red-200 text-xs rounded-xs flex items-center gap-2 font-mono">
+              <AlertTriangle className="w-4 h-4 text-red-400 shrink-0" />
+              <span>{passwordChangeError}</span>
+            </div>
+          )}
+
+          <div className="flex items-center justify-between pt-1">
+            <p className="text-[11px] text-neutral-500 font-mono">
+              Setting a custom password permanently hides the default credentials and removes the 1-click login button.
+            </p>
+            <button
+              type="button"
+              onClick={handleUpdateAdminPassword}
+              disabled={isUpdatingPassword}
+              className="bg-amber-400 hover:bg-amber-300 text-black px-4 py-2 text-xs font-bold uppercase rounded-xs flex items-center gap-1.5 font-display transition-colors cursor-pointer shrink-0"
+            >
+              <Key className="w-3.5 h-3.5 text-black" />
+              <span>{isUpdatingPassword ? 'Updating...' : 'Set Master Password'}</span>
+            </button>
           </div>
         </div>
 

@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useStore } from '../../context/StoreContext';
 import { Product, Design, ClothingType, PaymentMethodType, ProductVariant, DesignClothingTypeConfig } from '../../types';
+import { INITIAL_HERO_IMAGE } from '../../data/initialData';
 import {
   saveProduct,
   deleteProduct,
@@ -195,7 +196,7 @@ export const AdminProducts: React.FC = () => {
     setDesignName('');
     setDesignCode('REV-DSG-' + Math.floor(100 + Math.random() * 900));
     setDesignDescription('');
-    setDesignImages([designs[0]?.artworkImage || '/src/assets/images/hero_banner_automotive_1791711104210.jpg']);
+    setDesignImages([designs[0]?.artworkImage || INITIAL_HERO_IMAGE]);
     setImageError(null);
 
     // Initial clothing type configs
@@ -355,7 +356,7 @@ export const AdminProducts: React.FC = () => {
     setProdClothingType('Hoodie');
     setProdCategory('Hoodies');
     setProdDescription('');
-    setProdImages([designs[0]?.artworkImage || '/src/assets/images/hero_banner_automotive_1791711104210.jpg']);
+    setProdImages([designs[0]?.artworkImage || INITIAL_HERO_IMAGE]);
     setProdPrice(5500);
     setProdSalePrice(undefined);
     setProdSku('REV-NEW-01');

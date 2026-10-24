@@ -9,6 +9,9 @@ import {
   getAdminNotifications,
   markNotificationAsRead,
   markAllNotificationsAsRead,
+  resetAdminLockout,
+  resetAdminToDefault,
+  changeAdminCredentials,
 } from '../services/storage';
 
 export type AdminTab =
@@ -28,6 +31,7 @@ export type AdminTab =
 
 interface AdminContextType {
   isConfigured: boolean;
+  isCustomPasswordSet: boolean;
   isAuthenticated: boolean;
   username: string;
   activeTab: AdminTab;
@@ -36,6 +40,9 @@ interface AdminContextType {
   unreadNotificationCount: number;
   setupAdmin: (username: string, passwordPlain: string, recoveryCode: string) => Promise<boolean>;
   login: (username: string, passwordPlain: string) => Promise<boolean>;
+  changePassword: (newUsername: string, newPasswordPlain: string) => Promise<boolean>;
+  resetLockout: () => void;
+  resetToDefault: () => Promise<void>;
   logout: () => void;
   markNotificationRead: (id: string) => void;
   markAllNotificationsRead: () => void;
@@ -46,6 +53,7 @@ const AdminContext = createContext<AdminContextType | undefined>(undefined);
 
 export const AdminProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [isConfigured, setIsConfigured] = useState<boolean>(false);
+  const [isCustomPasswordSet, setIsCustomPasswordSet] = useState<boolean>(false);
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
   const [username, setUsername] = useState<string>('');
   const [activeTab, setActiveTab] = useState<AdminTab>('dashboard');
@@ -54,6 +62,7 @@ export const AdminProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const checkAuth = () => {
     const authState = getAdminAuthState();
     setIsConfigured(authState.isConfigured);
+    setIsCustomPasswordSet(Boolean(authState.isCustomPasswordSet));
     const session = getAdminSession();
     if (session) {
       setIsAuthenticated(true);
@@ -112,6 +121,7 @@ export const AdminProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     <AdminContext.Provider
       value={{
         isConfigured,
+        isCustomPasswordSet,
         isAuthenticated,
         username,
         activeTab,
@@ -120,6 +130,16 @@ export const AdminProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         unreadNotificationCount,
         setupAdmin: handleSetup,
         login: handleLogin,
+        changePassword: async (newUser: string, newPass: string) => {
+          const ok = await changeAdminCredentials(newUser, newPass);
+          if (ok) checkAuth();
+          return ok;
+        },
+        resetLockout: resetAdminLockout,
+        resetToDefault: async () => {
+          await resetAdminToDefault();
+          checkAuth();
+        },
         logout: handleLogout,
         markNotificationRead: handleMarkRead,
         markAllNotificationsRead: handleMarkAllRead,

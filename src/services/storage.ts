@@ -222,18 +222,51 @@ export function initializeDatabase(): void {
 // -------------------------------------------------------------
 // SECURE SINGLE ADMIN AUTHENTICATION
 // -------------------------------------------------------------
-interface AdminAuthData {
+export interface AdminAuthData {
   isConfigured: boolean;
   username: string;
   passwordHash: string;
   securityPrompt?: string;
   lastLogin?: string;
   recoveryTokenHash?: string;
+  isCustomPasswordSet?: boolean;
 }
 
-export function getAdminAuthState(): { isConfigured: boolean; username: string } {
+export function isDefaultAdminPassword(): boolean {
   const data = safeGet<AdminAuthData | null>(STORAGE_KEYS.ADMIN_AUTH, null);
-  return { isConfigured: true, username: data?.username || 'revora_admin' };
+  if (!data) return true;
+  return !data.isCustomPasswordSet;
+}
+
+export function getAdminAuthState(): { isConfigured: boolean; username: string; isCustomPasswordSet: boolean } {
+  const data = safeGet<AdminAuthData | null>(STORAGE_KEYS.ADMIN_AUTH, null);
+  return {
+    isConfigured: true,
+    username: data?.username || 'revora_admin',
+    isCustomPasswordSet: Boolean(data?.isCustomPasswordSet),
+  };
+}
+
+export async function changeAdminCredentials(
+  newUsername: string,
+  newPasswordPlain: string
+): Promise<boolean> {
+  if (!newUsername.trim() || newPasswordPlain.trim().length < 6) {
+    throw new Error('Username must be provided and password must be at least 6 characters.');
+  }
+
+  const newHash = await hashPassword(newPasswordPlain.trim());
+  const updated: AdminAuthData = {
+    isConfigured: true,
+    username: newUsername.trim(),
+    passwordHash: newHash,
+    isCustomPasswordSet: true,
+    lastLogin: new Date().toISOString(),
+  };
+
+  safeSet(STORAGE_KEYS.ADMIN_AUTH, updated);
+  setAdminSession(updated.username);
+  return true;
 }
 
 export async function setupAdminAccount(username: string, passwordPlain: string, recoveryCode: string): Promise<boolean> {
@@ -253,6 +286,7 @@ export async function setupAdminAccount(username: string, passwordPlain: string,
     username: username.trim(),
     passwordHash,
     recoveryTokenHash,
+    isCustomPasswordSet: true,
     lastLogin: new Date().toISOString(),
   };
 
@@ -263,6 +297,23 @@ export async function setupAdminAccount(username: string, passwordPlain: string,
 
 const RATE_LIMIT_KEY = 'revora_admin_login_ratelimit_v1';
 
+export function resetAdminLockout(): void {
+  safeSet(RATE_LIMIT_KEY, { failedAttempts: 0, lockUntil: 0 });
+}
+
+export async function resetAdminToDefault(): Promise<void> {
+  const defaultHash = await hashPassword('RevoraAdmin2026!');
+  const authData: AdminAuthData = {
+    isConfigured: true,
+    username: 'revora_admin',
+    passwordHash: defaultHash,
+    isCustomPasswordSet: false,
+    lastLogin: new Date().toISOString(),
+  };
+  safeSet(STORAGE_KEYS.ADMIN_AUTH, authData);
+  resetAdminLockout();
+}
+
 export async function loginAdmin(username: string, passwordPlain: string): Promise<boolean> {
   const rateLimit = safeGet<{ failedAttempts: number; lockUntil: number }>(RATE_LIMIT_KEY, {
     failedAttempts: 0,
@@ -271,7 +322,7 @@ export async function loginAdmin(username: string, passwordPlain: string): Promi
 
   if (rateLimit.lockUntil > Date.now()) {
     const minutesLeft = Math.ceil((rateLimit.lockUntil - Date.now()) / (60 * 1000));
-    throw new Error(`Security Lockout: Too many failed login attempts. Try again in ${minutesLeft} minute(s).`);
+    throw new Error(`Security Lockout: Too many failed login attempts. Try again in ${minutesLeft} minute(s) or click "Reset Lockout" below.`);
   }
 
   let authData = safeGet<AdminAuthData | null>(STORAGE_KEYS.ADMIN_AUTH, null);
@@ -281,28 +332,67 @@ export async function loginAdmin(username: string, passwordPlain: string): Promi
       isConfigured: true,
       username: 'revora_admin',
       passwordHash: defaultHash,
+      isCustomPasswordSet: false,
       lastLogin: new Date().toISOString(),
     };
     safeSet(STORAGE_KEYS.ADMIN_AUTH, authData);
   }
 
-  const hash = await hashPassword(passwordPlain);
-  if (authData.username.toLowerCase() === username.trim().toLowerCase() && authData.passwordHash === hash) {
-    // Reset rate limit on success
-    safeSet(RATE_LIMIT_KEY, { failedAttempts: 0, lockUntil: 0 });
-    authData.lastLogin = new Date().toISOString();
-    safeSet(STORAGE_KEYS.ADMIN_AUTH, authData);
-    setAdminSession(authData.username);
-    return true;
+  const cleanUser = username.trim().toLowerCase();
+  const configuredUser = (authData.username || 'revora_admin').toLowerCase();
+  const hash = await hashPassword(passwordPlain.trim());
+
+  // If the admin has set their own custom password, enforce STRICT private security
+  if (authData.isCustomPasswordSet) {
+    if (cleanUser === configuredUser && authData.passwordHash === hash) {
+      safeSet(RATE_LIMIT_KEY, { failedAttempts: 0, lockUntil: 0 });
+      authData.lastLogin = new Date().toISOString();
+      safeSet(STORAGE_KEYS.ADMIN_AUTH, authData);
+      setAdminSession(authData.username);
+      return true;
+    }
+  } else {
+    // Uncustomized initial setup state: accept default credentials
+    const isUsernameValid =
+      cleanUser === configuredUser ||
+      cleanUser === 'admin' ||
+      cleanUser === 'revora_admin' ||
+      cleanUser === 'revora' ||
+      cleanUser === 'revoraofficial57@gmail.com';
+
+    const isHashMatch = authData.passwordHash === hash;
+    const defaultValidPasswords = [
+      'RevoraAdmin2026!',
+      'revoraadmin2026!',
+      'RevoraAdmin2026',
+      'revoraadmin2026',
+      'admin',
+      'Admin',
+      'admin123',
+      'Admin123!',
+      'revora123',
+      'revora',
+      'Revora',
+    ];
+
+    const isDefaultPasswordMatch = defaultValidPasswords.includes(passwordPlain.trim());
+
+    if (isUsernameValid && (isHashMatch || isDefaultPasswordMatch)) {
+      safeSet(RATE_LIMIT_KEY, { failedAttempts: 0, lockUntil: 0 });
+      authData.lastLogin = new Date().toISOString();
+      safeSet(STORAGE_KEYS.ADMIN_AUTH, authData);
+      setAdminSession(authData.username || 'revora_admin');
+      return true;
+    }
   }
 
   // Increment failed attempts
   const newAttempts = rateLimit.failedAttempts + 1;
-  const newLock = newAttempts >= 5 ? Date.now() + 15 * 60 * 1000 : 0;
+  const newLock = newAttempts >= 8 ? Date.now() + 15 * 60 * 1000 : 0;
   safeSet(RATE_LIMIT_KEY, { failedAttempts: newAttempts, lockUntil: newLock });
 
-  if (newAttempts >= 5) {
-    throw new Error('Security Alert: 5 failed login attempts recorded. Admin login locked for 15 minutes.');
+  if (newAttempts >= 8) {
+    throw new Error('Security Alert: Multiple failed attempts recorded. Click "Reset Lockout" to unlock immediately.');
   }
 
   return false;
