@@ -15,7 +15,6 @@ import { CartDrawer } from './components/storefront/CartDrawer';
 import { CheckoutPage } from './components/storefront/CheckoutPage';
 import { OrderConfirmationPage } from './components/storefront/OrderConfirmationPage';
 import { OrderTrackingPage } from './components/storefront/OrderTrackingPage';
-import { CustomerAccountPage } from './components/storefront/CustomerAccountPage';
 import { ComplaintsSupportPage } from './components/storefront/ComplaintsSupportPage';
 import { StorePoliciesPage } from './components/storefront/StorePoliciesPage';
 import { CustomerReviewsPage } from './components/storefront/CustomerReviewsPage';
@@ -146,13 +145,6 @@ function AppContent() {
           />
         )}
 
-        {currentPage === 'account' && (
-          <CustomerAccountPage
-            onTrackOrder={handleTrackOrderFromConfirmation}
-            onExploreProducts={() => handleNavigate('shop')}
-            onNavigate={handleNavigate}
-          />
-        )}
 
         {(currentPage === 'support' || currentPage === 'complaints') && (
           <ComplaintsSupportPage

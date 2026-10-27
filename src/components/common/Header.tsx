@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ShoppingBag, Heart, Search, Shield, Menu, X, User, MessageSquare, BookOpen } from 'lucide-react';
+import { ShoppingBag, Heart, Search, Shield, Menu, X } from 'lucide-react';
 import { useStore } from '../../context/StoreContext';
 
 interface HeaderProps {
@@ -8,8 +8,9 @@ interface HeaderProps {
 }
 
 export const Header: React.FC<HeaderProps> = ({ onNavigate, currentPage }) => {
-  const { cart, wishlist, setIsCartOpen, customer } = useStore();
+  const { cart, wishlist, setIsCartOpen } = useStore();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
 
   const totalCartCount = cart.reduce((sum, item) => sum + item.quantity, 0);
 
@@ -106,15 +107,6 @@ export const Header: React.FC<HeaderProps> = ({ onNavigate, currentPage }) => {
           </button>
 
           <button
-            onClick={() => onNavigate('account')}
-            className="text-neutral-600 hover:text-black transition-colors p-1.5 cursor-pointer"
-            title={customer ? customer.fullName : 'Account'}
-            aria-label="Account"
-          >
-            <User className="w-4 h-4" />
-          </button>
-
-          <button
             onClick={() => onNavigate('admin')}
             className="text-neutral-400 hover:text-black transition-colors p-1.5 cursor-pointer"
             title="Admin Portal"
@@ -149,16 +141,7 @@ export const Header: React.FC<HeaderProps> = ({ onNavigate, currentPage }) => {
               {link.label}
             </button>
           ))}
-          <div className="pt-2 border-t border-neutral-200 flex items-center justify-between">
-            <button
-              onClick={() => {
-                onNavigate('account');
-                setMobileMenuOpen(false);
-              }}
-              className="text-xs text-neutral-600 hover:text-black"
-            >
-              {customer ? `Signed in: ${customer.fullName}` : 'Customer Account'}
-            </button>
+          <div className="pt-2 border-t border-neutral-200 flex items-center justify-end">
             <button
               onClick={() => {
                 onNavigate('admin');

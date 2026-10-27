@@ -41,8 +41,16 @@ provider.setCustomParameters({
 
 // Flag to track sign-in state
 let isSigningIn = false;
-// Cache access token strictly IN-MEMORY (per Workspace Integration security guidelines)
-let cachedAccessToken: string | null = null;
+const TOKEN_SESSION_KEY = 'revora_gmail_access_token_v1';
+
+// Cache access token with session fallback
+let cachedAccessToken: string | null = (() => {
+  try {
+    return sessionStorage.getItem(TOKEN_SESSION_KEY);
+  } catch {
+    return null;
+  }
+})();
 let cachedUser: User | null = null;
 
 // Listen to auth changes
@@ -53,14 +61,17 @@ export const initAuth = (
   return onAuthStateChanged(auth, async (user: User | null) => {
     cachedUser = user;
     if (user) {
-      if (cachedAccessToken) {
-        if (onAuthSuccess) onAuthSuccess(user, cachedAccessToken);
+      const token = await getAccessToken();
+      if (token) {
+        if (onAuthSuccess) onAuthSuccess(user, token);
       } else if (!isSigningIn) {
-        // Token might need re-acquisition or prompt
         if (onAuthFailure) onAuthFailure();
       }
     } else {
       cachedAccessToken = null;
+      try {
+        sessionStorage.removeItem(TOKEN_SESSION_KEY);
+      } catch {}
       if (onAuthFailure) onAuthFailure();
     }
   });
@@ -72,20 +83,23 @@ export const googleSignIn = async (): Promise<{ user: User; accessToken: string 
     const result = await signInWithPopup(auth, provider);
     const credential = GoogleAuthProvider.credentialFromResult(result);
     if (!credential?.accessToken) {
-      throw new Error('Failed to obtain Google OAuth access token.');
+      throw new Error('Failed to obtain Google OAuth access token. Ensure Gmail permissions were approved.');
     }
 
     cachedAccessToken = credential.accessToken;
     cachedUser = result.user;
+    try {
+      sessionStorage.setItem(TOKEN_SESSION_KEY, credential.accessToken);
+    } catch {}
     return { user: result.user, accessToken: cachedAccessToken };
   } catch (error: any) {
     const errorCode = error?.code || '';
     if (errorCode === 'auth/popup-blocked') {
-      console.warn('Google Sign-In popup was blocked by browser. User needs to allow popups in URL bar.');
+      console.warn('Google Sign-In popup was blocked by browser. Please allow popups.');
     } else if (errorCode === 'auth/popup-closed-by-user') {
-      console.warn('Google Sign-In popup was closed by the user.');
+      console.warn('Google Sign-In popup was closed by user.');
     } else {
-      console.warn('Google Sign-In interaction:', error?.message || error);
+      console.warn('Google Sign-In error:', error?.message || error);
     }
     throw error;
   } finally {
@@ -94,7 +108,29 @@ export const googleSignIn = async (): Promise<{ user: User; accessToken: string 
 };
 
 export const getAccessToken = async (): Promise<string | null> => {
-  return cachedAccessToken;
+  if (cachedAccessToken) return cachedAccessToken;
+  try {
+    const stored = sessionStorage.getItem(TOKEN_SESSION_KEY);
+    if (stored) {
+      cachedAccessToken = stored;
+      return stored;
+    }
+  } catch {}
+  return null;
+};
+
+export const isGoogleConnected = (): boolean => {
+  return Boolean(cachedAccessToken || (typeof window !== 'undefined' && sessionStorage.getItem(TOKEN_SESSION_KEY)));
+};
+
+export const ensureGoogleToken = async (): Promise<string> => {
+  const existing = await getAccessToken();
+  if (existing) return existing;
+  const res = await googleSignIn();
+  if (!res?.accessToken) {
+    throw new Error('Google Sign-In was cancelled or did not provide a valid Gmail token.');
+  }
+  return res.accessToken;
 };
 
 export const getCurrentUser = (): User | null => {
@@ -102,7 +138,13 @@ export const getCurrentUser = (): User | null => {
 };
 
 export const logoutGoogle = async () => {
-  await signOut(auth);
+  try {
+    await signOut(auth);
+  } catch {}
   cachedAccessToken = null;
   cachedUser = null;
+  try {
+    sessionStorage.removeItem(TOKEN_SESSION_KEY);
+  } catch {}
 };
+

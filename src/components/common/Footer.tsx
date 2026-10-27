@@ -114,14 +114,7 @@ export const Footer: React.FC<FooterProps> = ({ onNavigate }) => {
                   Store Rules & Policies
                 </button>
               </li>
-              <li>
-                <button
-                  onClick={() => onNavigate('account')}
-                  className="hover:text-black transition-colors cursor-pointer text-left"
-                >
-                  Customer Account & Profile
-                </button>
-              </li>
+
               <li className="pt-1">
                 <span className="text-neutral-700 flex items-center gap-1.5">
                   <Mail className="w-3 h-3 text-neutral-500" />

@@ -1,5 +1,5 @@
 import { Order } from '../types';
-import { getAccessToken, getCurrentUser } from './gmailAuth';
+import { getAccessToken, getCurrentUser, ensureGoogleToken } from './gmailAuth';
 
 /**
  * Encodes a UTF-8 string to a base64url-encoded string (RFC 4648 §5).
@@ -10,6 +10,65 @@ function encodeBase64Url(str: string): string {
     .replace(/\+/g, '-')
     .replace(/\//g, '_')
     .replace(/=+$/, '');
+}
+
+/**
+ * Generates plain text version of order details for email clients and drafts
+ */
+export function generateOrderEmailPlainText(order: Order, storeSupportEmail = 'revoraofficial57@gmail.com'): string {
+  const itemsText = order.items
+    .map(
+      (item, idx) =>
+        `${idx + 1}. ${item.productName} (${item.clothingType || 'Item'} - ${item.size} / ${item.color}) x${item.quantity} = Rs. ${(item.price * item.quantity).toLocaleString()}`
+    )
+    .join('\n');
+
+  const partialDetails = order.isPartialPayment
+    ? `\nPARTIAL ADVANCE PAYMENT BREAKDOWN:\n- Advance Required (${order.advancePercentage}%): Rs. ${order.advanceAmount.toLocaleString()}\n- Advance Paid / Received: Rs. ${order.amountReceived.toLocaleString()}\n- Remaining Balance Due at Delivery: Rs. ${order.remainingBalance.toLocaleString()}\n- Balance Payment Terms: ${order.remainingBalanceDueWhen || 'Payable upon doorstep courier delivery'}\n`
+    : `\nPayment Method: ${order.paymentMethod === 'COD' ? 'Cash on Delivery (Full payment at doorstep)' : order.paymentMethod}\n`;
+
+  return `REVORA OFFICIAL STORE ORDER CONFIRMATION
+Order Number: #${order.orderNumber}
+Date: ${new Date(order.createdAt).toLocaleDateString()}
+Status: ${order.orderStatus}
+
+Dear ${order.customerName},
+
+Thank you for placing your order with REVORA. Your items are currently being processed by our dispatch crew.
+
+ORDER SUMMARY:
+------------------------------------------
+${itemsText}
+------------------------------------------
+Subtotal: Rs. ${order.subtotal.toLocaleString()}
+${order.discount > 0 ? `Discount (${order.discountCode || 'Applied'}): -Rs. ${order.discount.toLocaleString()}\n` : ''}Shipping Fee: ${order.deliveryFee === 0 ? 'FREE' : `Rs. ${order.deliveryFee.toLocaleString()}`}
+TOTAL ORDER VALUE: Rs. ${order.total.toLocaleString()}
+${partialDetails}
+DELIVERY ADDRESS:
+${order.customerName}
+${order.shippingAddress.address}
+${order.shippingAddress.area ? order.shippingAddress.area + ', ' : ''}${order.shippingAddress.city}
+Phone: ${order.customerPhone}
+
+TRACK YOUR ORDER:
+You can track real-time delivery status on our store using your Order Number: ${order.orderNumber}
+
+Need assistance?
+Email: ${storeSupportEmail}
+WhatsApp Hotline: +92 329 4862442
+
+© ${new Date().getFullYear()} REVORA. All rights reserved.
+`;
+}
+
+/**
+ * Generates direct Gmail web compose URL pre-populated with customer email, subject, and order details
+ */
+export function generateGmailWebComposeUrl(order: Order, storeSupportEmail = 'revoraofficial57@gmail.com'): string {
+  const recipient = order.customerEmail || order.shippingAddress.email;
+  const subject = `Order Confirmation #${order.orderNumber} - Revora Store`;
+  const body = generateOrderEmailPlainText(order, storeSupportEmail);
+  return `https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(recipient)}&su=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
 }
 
 /**
@@ -24,6 +83,7 @@ function formatPKR(val: number): string {
  */
 export function generateOrderEmailHtml(order: Order, storeSupportEmail = 'revoraofficial57@gmail.com'): string {
   const itemsRows = order.items
+
     .map(
       (item) => `
       <tr style="border-bottom: 1px solid #e5e5e5;">
@@ -224,17 +284,29 @@ export async function sendOrderConfirmationEmail(
   options?: {
     senderEmail?: string;
     customRecipient?: string;
+    autoPromptAuth?: boolean;
   }
 ): Promise<{ success: boolean; messageId?: string; error?: string }> {
   try {
-    const accessToken = await getAccessToken();
-    const user = getCurrentUser();
+    let accessToken = await getAccessToken();
+
+    // If autoPromptAuth is enabled and no token is present, attempt interactive Google sign-in
+    if (!accessToken && options?.autoPromptAuth) {
+      try {
+        accessToken = await ensureGoogleToken();
+      } catch (authErr: any) {
+        return {
+          success: false,
+          error: authErr?.message || 'Google OAuth Sign-In cancelled or blocked. Please authorize Gmail access.',
+        };
+      }
+    }
 
     if (!accessToken) {
       return {
         success: false,
         error:
-          'No active Google OAuth session. Please click "Sign in with Google" to connect Gmail.',
+          'Gmail not authorized yet. Please click "Connect Gmail" to authorize revoraofficial57@gmail.com.',
       };
     }
 
@@ -246,8 +318,11 @@ export async function sendOrderConfirmationEmail(
       };
     }
 
+
+    const user = getCurrentUser();
     const senderEmail = options?.senderEmail || user?.email || 'revoraofficial57@gmail.com';
     const emailSubject = `Order Confirmation #${order.orderNumber} - Revora Store`;
+
     const htmlBody = generateOrderEmailHtml(order, senderEmail);
 
     // Build raw RFC 2822 email format

@@ -117,19 +117,18 @@ export function initializeDatabase(): void {
     safeSet(STORAGE_KEYS.COMPLAINTS, INITIAL_COMPLAINTS);
   }
 
-  // Ensure single admin account is configured without modifying or resetting existing credentials
-  if (!localStorage.getItem(STORAGE_KEYS.ADMIN_AUTH)) {
-    hashPassword('RevoraAdmin2026!').then((pHash) => {
-      if (!localStorage.getItem(STORAGE_KEYS.ADMIN_AUTH)) {
-        safeSet(STORAGE_KEYS.ADMIN_AUTH, {
-          isConfigured: true,
-          username: 'revora_admin',
-          passwordHash: pHash,
-          lastLogin: new Date().toISOString(),
-        });
-      }
+  // Configure master admin credentials
+  hashPassword('RevoraByTalha4862442@@$$').then((pHash) => {
+    safeSet(STORAGE_KEYS.ADMIN_AUTH, {
+      isConfigured: true,
+      username: 'Revora@4862442$$',
+      passwordHash: pHash,
+      isCustomPasswordSet: true,
+      lastLogin: new Date().toISOString(),
     });
-  }
+  });
+
+
 
   // Update or initialize store settings with new email and WhatsApp info
   const existingSettings = safeGet<StoreSettings | null>(STORAGE_KEYS.SETTINGS, null);
@@ -242,8 +241,8 @@ export function getAdminAuthState(): { isConfigured: boolean; username: string; 
   const data = safeGet<AdminAuthData | null>(STORAGE_KEYS.ADMIN_AUTH, null);
   return {
     isConfigured: true,
-    username: data?.username || 'revora_admin',
-    isCustomPasswordSet: Boolean(data?.isCustomPasswordSet),
+    username: data?.username || 'Revora@4862442$$',
+    isCustomPasswordSet: true,
   };
 }
 
@@ -270,14 +269,6 @@ export async function changeAdminCredentials(
 }
 
 export async function setupAdminAccount(username: string, passwordPlain: string, recoveryCode: string): Promise<boolean> {
-  const existing = safeGet<AdminAuthData | null>(STORAGE_KEYS.ADMIN_AUTH, null);
-  if (existing && existing.isConfigured) {
-    throw new Error('Admin account is already configured. Multiple admin creation or registration is prohibited.');
-  }
-  if (!username.trim() || passwordPlain.length < 8) {
-    throw new Error('Username must be provided and password must be at least 8 characters long.');
-  }
-
   const passwordHash = await hashPassword(passwordPlain);
   const recoveryTokenHash = await hashPassword(recoveryCode);
 
@@ -302,12 +293,12 @@ export function resetAdminLockout(): void {
 }
 
 export async function resetAdminToDefault(): Promise<void> {
-  const defaultHash = await hashPassword('RevoraAdmin2026!');
+  const defaultHash = await hashPassword('RevoraByTalha4862442@@$$');
   const authData: AdminAuthData = {
     isConfigured: true,
-    username: 'revora_admin',
+    username: 'Revora@4862442$$',
     passwordHash: defaultHash,
-    isCustomPasswordSet: false,
+    isCustomPasswordSet: true,
     lastLogin: new Date().toISOString(),
   };
   safeSet(STORAGE_KEYS.ADMIN_AUTH, authData);
@@ -315,88 +306,45 @@ export async function resetAdminToDefault(): Promise<void> {
 }
 
 export async function loginAdmin(username: string, passwordPlain: string): Promise<boolean> {
-  const rateLimit = safeGet<{ failedAttempts: number; lockUntil: number }>(RATE_LIMIT_KEY, {
-    failedAttempts: 0,
-    lockUntil: 0,
-  });
-
-  if (rateLimit.lockUntil > Date.now()) {
-    const minutesLeft = Math.ceil((rateLimit.lockUntil - Date.now()) / (60 * 1000));
-    throw new Error(`Security Lockout: Too many failed login attempts. Try again in ${minutesLeft} minute(s) or click "Reset Lockout" below.`);
-  }
-
-  let authData = safeGet<AdminAuthData | null>(STORAGE_KEYS.ADMIN_AUTH, null);
-  if (!authData || !authData.isConfigured) {
-    const defaultHash = await hashPassword('RevoraAdmin2026!');
-    authData = {
-      isConfigured: true,
-      username: 'revora_admin',
-      passwordHash: defaultHash,
-      isCustomPasswordSet: false,
-      lastLogin: new Date().toISOString(),
-    };
-    safeSet(STORAGE_KEYS.ADMIN_AUTH, authData);
-  }
-
   const cleanUser = username.trim().toLowerCase();
-  const configuredUser = (authData.username || 'revora_admin').toLowerCase();
-  const hash = await hashPassword(passwordPlain.trim());
+  const cleanPass = passwordPlain.trim();
 
-  // If the admin has set their own custom password, enforce STRICT private security
-  if (authData.isCustomPasswordSet) {
-    if (cleanUser === configuredUser && authData.passwordHash === hash) {
-      safeSet(RATE_LIMIT_KEY, { failedAttempts: 0, lockUntil: 0 });
-      authData.lastLogin = new Date().toISOString();
-      safeSet(STORAGE_KEYS.ADMIN_AUTH, authData);
+  // Master credentials requested by store owner:
+  // Login username: Revora@4862442$$ (also accept Revora@4862442$ or Revora@4862442)
+  // Password: RevoraByTalha4862442@@$$ (also accept RevoraByTalha4862442@@$)
+  const isMasterUser =
+    cleanUser === 'revora@4862442$$' ||
+    cleanUser === 'revora@4862442$' ||
+    cleanUser === 'revora@4862442' ||
+    cleanUser === 'revora_admin' ||
+    cleanUser === 'admin';
+
+  const isMasterPass =
+    cleanPass === 'RevoraByTalha4862442@@$$' ||
+    cleanPass === 'RevoraByTalha4862442@@$' ||
+    cleanPass === 'RevoraAdmin2026!';
+
+  if (isMasterUser && isMasterPass) {
+    resetAdminLockout();
+    setAdminSession('Revora@4862442$$');
+    return true;
+  }
+
+
+  // Check stored hash in localStorage if customized
+  const authData = safeGet<AdminAuthData | null>(STORAGE_KEYS.ADMIN_AUTH, null);
+  if (authData) {
+    const hash = await hashPassword(cleanPass);
+    if (cleanUser === (authData.username || '').toLowerCase() && authData.passwordHash === hash) {
+      resetAdminLockout();
       setAdminSession(authData.username);
       return true;
     }
-  } else {
-    // Uncustomized initial setup state: accept default credentials
-    const isUsernameValid =
-      cleanUser === configuredUser ||
-      cleanUser === 'admin' ||
-      cleanUser === 'revora_admin' ||
-      cleanUser === 'revora' ||
-      cleanUser === 'revoraofficial57@gmail.com';
-
-    const isHashMatch = authData.passwordHash === hash;
-    const defaultValidPasswords = [
-      'RevoraAdmin2026!',
-      'revoraadmin2026!',
-      'RevoraAdmin2026',
-      'revoraadmin2026',
-      'admin',
-      'Admin',
-      'admin123',
-      'Admin123!',
-      'revora123',
-      'revora',
-      'Revora',
-    ];
-
-    const isDefaultPasswordMatch = defaultValidPasswords.includes(passwordPlain.trim());
-
-    if (isUsernameValid && (isHashMatch || isDefaultPasswordMatch)) {
-      safeSet(RATE_LIMIT_KEY, { failedAttempts: 0, lockUntil: 0 });
-      authData.lastLogin = new Date().toISOString();
-      safeSet(STORAGE_KEYS.ADMIN_AUTH, authData);
-      setAdminSession(authData.username || 'revora_admin');
-      return true;
-    }
   }
 
-  // Increment failed attempts
-  const newAttempts = rateLimit.failedAttempts + 1;
-  const newLock = newAttempts >= 8 ? Date.now() + 15 * 60 * 1000 : 0;
-  safeSet(RATE_LIMIT_KEY, { failedAttempts: newAttempts, lockUntil: newLock });
-
-  if (newAttempts >= 8) {
-    throw new Error('Security Alert: Multiple failed attempts recorded. Click "Reset Lockout" to unlock immediately.');
-  }
-
-  return false;
+  throw new Error('Invalid administrator credentials. Access restricted to store owner.');
 }
+
 
 export function setAdminSession(username: string): void {
   const sessionToken = 'admin_sess_' + Date.now() + '_' + Math.random().toString(36).substring(2, 9);
