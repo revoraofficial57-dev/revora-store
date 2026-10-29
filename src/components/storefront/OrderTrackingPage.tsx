@@ -30,8 +30,8 @@ export const OrderTrackingPage: React.FC<OrderTrackingPageProps> = ({
     setErrorMessage(null);
     setHasSearched(true);
 
-    if (!orderNumberInput.trim() || !contactInput.trim()) {
-      setErrorMessage('Please provide both the Order Number and your Phone Number or Email Address.');
+    if (!orderNumberInput.trim() && !contactInput.trim()) {
+      setErrorMessage('Please enter either your Order Number OR your Phone Number / Email Address.');
       setSearchedOrder(null);
       return;
     }
@@ -39,7 +39,7 @@ export const OrderTrackingPage: React.FC<OrderTrackingPageProps> = ({
     const found = trackOrderByReference(orderNumberInput.trim(), contactInput.trim());
     if (!found) {
       setErrorMessage(
-        'No matching order found for this Order Number and contact verification. Please check your order confirmation details.'
+        'No matching order found for the provided information. Please check your order details or try entering your phone number/email.'
       );
       setSearchedOrder(null);
     } else {
@@ -87,11 +87,10 @@ export const OrderTrackingPage: React.FC<OrderTrackingPageProps> = ({
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="block text-xs font-mono text-neutral-700 font-semibold mb-1">
-                Order Number *
+                Order Number (Optional if Phone/Email provided)
               </label>
               <input
                 type="text"
-                required
                 value={orderNumberInput}
                 onChange={(e) => setOrderNumberInput(e.target.value.toUpperCase())}
                 placeholder="e.g. REV-8921-94"
@@ -100,11 +99,10 @@ export const OrderTrackingPage: React.FC<OrderTrackingPageProps> = ({
             </div>
             <div>
               <label className="block text-xs font-mono text-neutral-700 font-semibold mb-1">
-                Verified Phone or Email *
+                Phone Number or Email (Optional if Order # provided)
               </label>
               <input
                 type="text"
-                required
                 value={contactInput}
                 onChange={(e) => setContactInput(e.target.value)}
                 placeholder="e.g. 0300 1234567 or email"
@@ -112,6 +110,9 @@ export const OrderTrackingPage: React.FC<OrderTrackingPageProps> = ({
               />
             </div>
           </div>
+          <p className="text-[11px] font-mono text-neutral-500">
+            * Provide <strong>either</strong> your Order Number or your registered Phone/Email (both are not required).
+          </p>
 
           <button
             type="submit"

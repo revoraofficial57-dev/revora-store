@@ -129,12 +129,8 @@ export const ComplaintsSupportPage: React.FC<ComplaintsSupportPageProps> = ({
     setTrackError(null);
     setTrackedComplaint(null);
 
-    if (!trackTicketNumber.trim()) {
-      setTrackError('Please enter your Ticket Reference Number (e.g. REV-CMP-1042).');
-      return;
-    }
-    if (!trackContact.trim()) {
-      setTrackError('Please enter the registered Phone Number or Email address.');
+    if (!trackTicketNumber.trim() && !trackContact.trim()) {
+      setTrackError('Please enter either your Ticket Reference Number OR your Phone Number / Email.');
       return;
     }
 
@@ -144,7 +140,7 @@ export const ComplaintsSupportPage: React.FC<ComplaintsSupportPageProps> = ({
 
     if (!found) {
       setTrackError(
-        `No complaint found matching ticket "${trackTicketNumber.trim()}" and contact details. Please check the reference code.`
+        'No complaint ticket found matching the provided details. Please check the reference code or phone/email.'
       );
     } else {
       setTrackedComplaint(found);
@@ -551,11 +547,10 @@ export const ComplaintsSupportPage: React.FC<ComplaintsSupportPageProps> = ({
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs font-mono">
                 <div>
                   <label className="block text-neutral-700 font-bold mb-1">
-                    Ticket Reference # *
+                    Ticket Reference # (Optional if Phone/Email provided)
                   </label>
                   <input
                     type="text"
-                    required
                     value={trackTicketNumber}
                     onChange={(e) => setTrackTicketNumber(e.target.value)}
                     placeholder="e.g. REV-CMP-1042"
@@ -565,11 +560,10 @@ export const ComplaintsSupportPage: React.FC<ComplaintsSupportPageProps> = ({
 
                 <div>
                   <label className="block text-neutral-700 font-bold mb-1">
-                    Phone or Email *
+                    Phone or Email (Optional if Ticket # provided)
                   </label>
                   <input
                     type="text"
-                    required
                     value={trackContact}
                     onChange={(e) => setTrackContact(e.target.value)}
                     placeholder="e.g. 03214567890 or email"
@@ -577,6 +571,9 @@ export const ComplaintsSupportPage: React.FC<ComplaintsSupportPageProps> = ({
                   />
                 </div>
               </div>
+              <p className="text-[11px] font-mono text-neutral-500">
+                * You can search with <strong>either</strong> your Ticket Number or your Phone/Email (both are not required).
+              </p>
 
               <button
                 type="submit"

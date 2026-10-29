@@ -629,19 +629,34 @@ export function getOrderById(id: string): Order | null {
   return orders.find((o) => o.id === id || o.orderNumber === id) || null;
 }
 
-export function trackOrderByReference(orderNumber: string, verificationContact: string): Order | null {
+export function trackOrderByReference(orderNumber?: string, verificationContact?: string): Order | null {
   const orders = getAllOrders();
-  const cleanContact = verificationContact.trim().toLowerCase().replace(/[\s-]/g, '');
+  const cleanNum = (orderNumber || '').trim().toUpperCase();
+  const rawContact = (verificationContact || '').trim();
+  const cleanContact = rawContact.toLowerCase().replace(/[\s-]/g, '');
+
+  if (!cleanNum && !cleanContact) return null;
 
   return (
     orders.find((o) => {
-      const matchOrder = o.orderNumber.toUpperCase() === orderNumber.trim().toUpperCase() || o.id === orderNumber.trim();
-      if (!matchOrder) return false;
+      const matchOrder = cleanNum
+        ? o.orderNumber.trim().toUpperCase() === cleanNum || o.id.trim() === cleanNum
+        : false;
 
       const orderPhone = (o.customerPhone || '').toLowerCase().replace(/[\s-]/g, '');
       const orderEmail = (o.customerEmail || '').toLowerCase().trim();
+      const matchContact = cleanContact
+        ? orderPhone.includes(cleanContact) ||
+          orderEmail === rawContact.toLowerCase() ||
+          (rawContact.length >= 6 && cleanContact.includes(orderPhone))
+        : false;
 
-      return orderPhone.includes(cleanContact) || orderEmail === cleanContact;
+      if (cleanNum && cleanContact) {
+        return matchOrder || matchContact;
+      }
+      if (cleanNum) return matchOrder;
+      if (cleanContact) return matchContact;
+      return false;
     }) || null
   );
 }
@@ -988,17 +1003,36 @@ export function getAllComplaints(): CustomerComplaint[] {
   return safeGet<CustomerComplaint[]>(STORAGE_KEYS.COMPLAINTS, INITIAL_COMPLAINTS);
 }
 
-export function getComplaintByTicket(ticketNumber: string, contact: string): CustomerComplaint | null {
+export function getComplaintByTicket(ticketNumber?: string, contact?: string): CustomerComplaint | null {
   const complaints = getAllComplaints();
-  const cleanContact = contact.trim().toLowerCase().replace(/[\s-]/g, '');
+  const cleanTicket = (ticketNumber || '').trim().toUpperCase();
+  const rawContact = (contact || '').trim();
+  const cleanContact = rawContact.toLowerCase().replace(/[\s-]/g, '');
+
+  if (!cleanTicket && !cleanContact) return null;
 
   return (
     complaints.find((c) => {
-      const matchTicket = c.ticketNumber.toUpperCase() === ticketNumber.trim().toUpperCase() || c.id === ticketNumber.trim();
-      if (!matchTicket) return false;
+      const matchTicket = cleanTicket
+        ? c.ticketNumber.trim().toUpperCase() === cleanTicket ||
+          c.id.trim().toUpperCase() === cleanTicket ||
+          (c.orderId && c.orderId.trim().toUpperCase() === cleanTicket)
+        : false;
+
       const cleanPhone = (c.phone || '').toLowerCase().replace(/[\s-]/g, '');
       const cleanEmail = (c.email || '').toLowerCase().trim();
-      return cleanPhone.includes(cleanContact) || cleanEmail === cleanContact;
+      const matchContact = cleanContact
+        ? cleanPhone.includes(cleanContact) ||
+          cleanEmail === rawContact.toLowerCase() ||
+          (rawContact.length >= 6 && cleanContact.includes(cleanPhone))
+        : false;
+
+      if (cleanTicket && cleanContact) {
+        return matchTicket || matchContact;
+      }
+      if (cleanTicket) return matchTicket;
+      if (cleanContact) return matchContact;
+      return false;
     }) || null
   );
 }
