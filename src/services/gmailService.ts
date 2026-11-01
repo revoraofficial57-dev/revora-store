@@ -72,6 +72,16 @@ export function generateGmailWebComposeUrl(order: Order, storeSupportEmail = 're
 }
 
 /**
+ * Generates standard mailto URL for default system email client
+ */
+export function generateMailtoUrl(order: Order, storeSupportEmail = 'revoraofficial57@gmail.com'): string {
+  const recipient = order.customerEmail || order.shippingAddress.email;
+  const subject = `Order Confirmation #${order.orderNumber} - Revora Store`;
+  const body = generateOrderEmailPlainText(order, storeSupportEmail);
+  return `mailto:${encodeURIComponent(recipient)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+}
+
+/**
  * Formats PKR currency amounts cleanly
  */
 function formatPKR(val: number): string {

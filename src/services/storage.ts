@@ -464,7 +464,8 @@ export function saveDesignWithClothingTypes(
     description?: string;
     isAvailable: boolean;
   }>,
-  artworkImages: string[]
+  artworkImages: string[],
+  allowedPaymentMethods?: PaymentMethodType[]
 ): Design {
   // Validate images: minimum 1 and maximum 4
   const validImages = artworkImages.filter(Boolean).slice(0, 4);
@@ -472,10 +473,18 @@ export function saveDesignWithClothingTypes(
     throw new Error('A minimum of 1 image is required for this design.');
   }
 
+  const effectiveAllowedPayments: PaymentMethodType[] =
+    allowedPaymentMethods && allowedPaymentMethods.length > 0
+      ? allowedPaymentMethods
+      : design.allowedPaymentMethods && design.allowedPaymentMethods.length > 0
+      ? design.allowedPaymentMethods
+      : ['COD', 'BANK_TRANSFER', 'ONLINE'];
+
   const updatedDesign: Design = {
     ...design,
     artworkImage: validImages[0],
     availableTypes: clothingConfigs,
+    allowedPaymentMethods: effectiveAllowedPayments,
   };
 
   const allProducts = getAllProducts();
@@ -499,6 +508,7 @@ export function saveDesignWithClothingTypes(
       existingProduct.discountPercentage = cfg.salePrice ? Math.round(((cfg.price - cfg.salePrice) / cfg.price) * 100) : undefined;
       existingProduct.images = validImages;
       existingProduct.status = 'active';
+      existingProduct.allowedPaymentMethods = effectiveAllowedPayments;
       existingProduct.updatedAt = new Date().toISOString();
       activeProductIds.push(existingProduct.id);
     } else {
@@ -544,7 +554,7 @@ export function saveDesignWithClothingTypes(
         isNewArrival: true,
         isBestSeller: false,
         isWinterCollection: ['Hoodie', 'Jacket', 'Sweater', 'Winter shirt'].includes(cfg.clothingType),
-        allowedPaymentMethods: ['COD', 'BANK_TRANSFER', 'ONLINE'],
+        allowedPaymentMethods: effectiveAllowedPayments,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       };

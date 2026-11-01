@@ -50,6 +50,7 @@ export const AdminProducts: React.FC = () => {
   // Clothing type configs for this design
   const [clothingConfigs, setClothingConfigs] = useState<DesignClothingTypeConfig[]>([]);
   const [newCustomClothingType, setNewCustomClothingType] = useState('');
+  const [designAllowedPayments, setDesignAllowedPayments] = useState<PaymentMethodType[]>(['COD', 'BANK_TRANSFER', 'ONLINE']);
 
   // Image upload feedback state
   const [imageError, setImageError] = useState<string | null>(null);
@@ -208,6 +209,7 @@ export const AdminProducts: React.FC = () => {
       isAvailable: ['Regular T-shirt', 'Oversized T-shirt', 'Hoodie'].includes(t.name),
     }));
     setClothingConfigs(initialConfigs);
+    setDesignAllowedPayments(['COD', 'BANK_TRANSFER', 'ONLINE']);
     setIsDesignModalOpen(true);
   };
 
@@ -222,6 +224,15 @@ export const AdminProducts: React.FC = () => {
     const existingImgs = linked[0]?.images?.length ? linked[0].images : [des.artworkImage];
     setDesignImages(existingImgs.slice(0, 4));
     setImageError(null);
+
+    // Initial allowed payment methods for design
+    const initialAllowedPayments: PaymentMethodType[] =
+      des.allowedPaymentMethods && des.allowedPaymentMethods.length > 0
+        ? des.allowedPaymentMethods
+        : linked[0]?.allowedPaymentMethods && linked[0].allowedPaymentMethods.length > 0
+        ? (linked[0].allowedPaymentMethods as PaymentMethodType[])
+        : ['COD', 'BANK_TRANSFER', 'ONLINE'];
+    setDesignAllowedPayments(initialAllowedPayments);
 
     // Merge existing availableTypes with default options
     const existingTypeMap = new Map((des.availableTypes || []).map((t) => [t.clothingType.toLowerCase(), t]));
@@ -302,6 +313,11 @@ export const AdminProducts: React.FC = () => {
       return;
     }
 
+    if (designAllowedPayments.length === 0) {
+      alert('Please select at least 1 allowed payment method for this design matrix.');
+      return;
+    }
+
     const enabledTypes = clothingConfigs.filter((c) => c.isAvailable);
     if (enabledTypes.length === 0) {
       alert('Please select at least 1 clothing type that will feature this design.');
@@ -325,11 +341,12 @@ export const AdminProducts: React.FC = () => {
       tags: ['Motorsport', 'Streetwear'],
       productIds: editingDesign?.productIds || [],
       availableTypes: clothingConfigs,
+      allowedPaymentMethods: designAllowedPayments,
       createdAt: editingDesign?.createdAt || new Date().toISOString(),
     };
 
     try {
-      saveDesignWithClothingTypes(designToSave, clothingConfigs, designImages);
+      saveDesignWithClothingTypes(designToSave, clothingConfigs, designImages, designAllowedPayments);
       refreshData();
       setIsDesignModalOpen(false);
       showToast(`Design "${designToSave.name}" and ${enabledTypes.length} clothing silhouettes updated successfully!`);
@@ -403,6 +420,11 @@ export const AdminProducts: React.FC = () => {
 
     if (prodImages.length === 0) {
       setImageError('A minimum of 1 image is required (maximum 4).');
+      return;
+    }
+
+    if (prodAllowedPayments.length === 0) {
+      alert('Please select at least 1 allowed payment method for this product.');
       return;
     }
 
@@ -555,6 +577,18 @@ export const AdminProducts: React.FC = () => {
                   </div>
                 </div>
 
+                {/* Allowed payment methods for design */}
+                <div className="pt-2 border-t border-neutral-900 flex items-center justify-between text-[11px] font-mono">
+                  <span className="text-neutral-400">Allowed Payments:</span>
+                  <div className="flex gap-1">
+                    {(des.allowedPaymentMethods || ['COD', 'BANK_TRANSFER', 'ONLINE']).map((m) => (
+                      <span key={m} className="px-1.5 py-0.5 rounded-2xs bg-neutral-900 border border-neutral-800 text-[10px] text-neutral-300 font-semibold">
+                        {m === 'BANK_TRANSFER' ? 'Bank' : m === 'ONLINE' ? 'Online' : 'COD'}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+
                 <div className="pt-3 border-t border-neutral-900 flex items-center justify-between text-xs font-mono">
                   <span className="text-neutral-500">Matrix Controls</span>
                   <div className="flex items-center gap-2">
@@ -590,6 +624,7 @@ export const AdminProducts: React.FC = () => {
                 <th className="p-3">Images (1-4)</th>
                 <th className="p-3">Base SKU</th>
                 <th className="p-3">Price (PKR)</th>
+                <th className="p-3">Payments</th>
                 <th className="p-3">Stock</th>
                 <th className="p-3">Status</th>
                 <th className="p-3 text-right">Actions</th>
@@ -621,6 +656,18 @@ export const AdminProducts: React.FC = () => {
                     <td className="p-3 font-bold text-neutral-300">{p.sku}</td>
                     <td className="p-3 text-white tabular-nums font-bold">
                       {formatPKR(p.salePrice || p.price)}
+                    </td>
+                    <td className="p-3">
+                      <div className="flex flex-wrap gap-1">
+                        {(p.allowedPaymentMethods || ['COD', 'BANK_TRANSFER', 'ONLINE']).map((m) => (
+                          <span
+                            key={m}
+                            className="px-1.5 py-0.5 rounded-2xs bg-neutral-900 border border-neutral-800 text-[10px] text-neutral-300 font-semibold"
+                          >
+                            {m === 'BANK_TRANSFER' ? 'Bank' : m === 'ONLINE' ? 'Online' : 'COD'}
+                          </span>
+                        ))}
+                      </div>
                     </td>
                     <td className="p-3 tabular-nums">
                       <span className={totalStock <= 5 ? 'text-amber-400 font-bold' : 'text-neutral-300'}>
@@ -946,6 +993,135 @@ export const AdminProducts: React.FC = () => {
                 </div>
               </div>
 
+              {/* Allowed Payment Methods for Design Matrix Products */}
+              <div className="p-4 bg-neutral-900/60 border border-neutral-800 rounded-xs space-y-3">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <div>
+                    <span className="font-bold text-white uppercase text-xs">
+                      Allowed Payment Methods for Matrix Products ({designAllowedPayments.length} of 3 Selected) *
+                    </span>
+                    <span className="text-[11px] text-neutral-400 block mt-0.5">
+                      Select which payment options are permitted for items created under this design matrix.
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-1.5 text-[11px]">
+                    <button
+                      type="button"
+                      onClick={() => setDesignAllowedPayments(['COD', 'BANK_TRANSFER', 'ONLINE'])}
+                      className="px-2 py-1 bg-neutral-800 hover:bg-neutral-700 text-neutral-200 rounded-xs cursor-pointer"
+                    >
+                      All 3
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setDesignAllowedPayments(['COD'])}
+                      className="px-2 py-1 bg-neutral-800 hover:bg-neutral-700 text-neutral-200 rounded-xs cursor-pointer"
+                    >
+                      COD Only
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setDesignAllowedPayments(['BANK_TRANSFER', 'ONLINE'])}
+                      className="px-2 py-1 bg-neutral-800 hover:bg-neutral-700 text-neutral-200 rounded-xs cursor-pointer"
+                    >
+                      Prepaid Only
+                    </button>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
+                  {/* COD */}
+                  <label
+                    className={`p-3 rounded-xs border cursor-pointer flex items-start gap-2.5 transition-colors ${
+                      designAllowedPayments.includes('COD')
+                        ? 'bg-neutral-900 border-white text-white'
+                        : 'bg-neutral-950/40 border-neutral-800 text-neutral-400 hover:border-neutral-700'
+                    }`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={designAllowedPayments.includes('COD')}
+                      onChange={(e) => {
+                        if (e.target.checked) {
+                          setDesignAllowedPayments([...designAllowedPayments, 'COD']);
+                        } else {
+                          setDesignAllowedPayments(designAllowedPayments.filter((m) => m !== 'COD'));
+                        }
+                      }}
+                      className="mt-0.5 accent-white cursor-pointer"
+                    />
+                    <div>
+                      <div className="font-bold text-xs text-white">Cash on Delivery (COD)</div>
+                      <div className="text-[10px] text-neutral-400 mt-0.5">
+                        Customer pays full cash to courier at doorstep
+                      </div>
+                    </div>
+                  </label>
+
+                  {/* Bank Transfer */}
+                  <label
+                    className={`p-3 rounded-xs border cursor-pointer flex items-start gap-2.5 transition-colors ${
+                      designAllowedPayments.includes('BANK_TRANSFER')
+                        ? 'bg-neutral-900 border-white text-white'
+                        : 'bg-neutral-950/40 border-neutral-800 text-neutral-400 hover:border-neutral-700'
+                    }`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={designAllowedPayments.includes('BANK_TRANSFER')}
+                      onChange={(e) => {
+                        if (e.target.checked) {
+                          setDesignAllowedPayments([...designAllowedPayments, 'BANK_TRANSFER']);
+                        } else {
+                          setDesignAllowedPayments(designAllowedPayments.filter((m) => m !== 'BANK_TRANSFER'));
+                        }
+                      }}
+                      className="mt-0.5 accent-white cursor-pointer"
+                    />
+                    <div>
+                      <div className="font-bold text-xs text-white">Direct Bank Transfer</div>
+                      <div className="text-[10px] text-neutral-400 mt-0.5">
+                        Direct IBAN / Raast payment & slip upload
+                      </div>
+                    </div>
+                  </label>
+
+                  {/* Online Payment */}
+                  <label
+                    className={`p-3 rounded-xs border cursor-pointer flex items-start gap-2.5 transition-colors ${
+                      designAllowedPayments.includes('ONLINE')
+                        ? 'bg-neutral-900 border-white text-white'
+                        : 'bg-neutral-950/40 border-neutral-800 text-neutral-400 hover:border-neutral-700'
+                    }`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={designAllowedPayments.includes('ONLINE')}
+                      onChange={(e) => {
+                        if (e.target.checked) {
+                          setDesignAllowedPayments([...designAllowedPayments, 'ONLINE']);
+                        } else {
+                          setDesignAllowedPayments(designAllowedPayments.filter((m) => m !== 'ONLINE'));
+                        }
+                      }}
+                      className="mt-0.5 accent-white cursor-pointer"
+                    />
+                    <div>
+                      <div className="font-bold text-xs text-white">Online Payment</div>
+                      <div className="text-[10px] text-neutral-400 mt-0.5">
+                        Debit/Credit Card & Mobile Wallet
+                      </div>
+                    </div>
+                  </label>
+                </div>
+
+                {designAllowedPayments.length === 0 && (
+                  <div className="text-[11px] text-red-400 font-mono">
+                    ⚠️ Warning: You must select at least 1 payment method for matrix products.
+                  </div>
+                )}
+              </div>
+
               {/* Form Actions */}
               <div className="pt-4 border-t border-neutral-800 flex justify-end gap-3">
                 <button
@@ -1166,6 +1342,135 @@ export const AdminProducts: React.FC = () => {
                     onChange={(e) => setProdDescription(e.target.value)}
                     className="w-full bg-neutral-900 border border-neutral-800 text-white p-2.5 rounded-xs"
                   />
+                </div>
+
+                {/* Allowed Payment Methods for Product */}
+                <div className="sm:col-span-2 p-4 bg-neutral-900/60 border border-neutral-800 rounded-xs space-y-3">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                    <div>
+                      <span className="font-bold text-white uppercase text-xs">
+                        Allowed Payment Methods ({prodAllowedPayments.length} of 3 Selected) *
+                      </span>
+                      <span className="text-[11px] text-neutral-400 block mt-0.5">
+                        Choose which payment options customers can select when buying this product.
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-1.5 text-[11px]">
+                      <button
+                        type="button"
+                        onClick={() => setProdAllowedPayments(['COD', 'BANK_TRANSFER', 'ONLINE'])}
+                        className="px-2 py-1 bg-neutral-800 hover:bg-neutral-700 text-neutral-200 rounded-xs cursor-pointer"
+                      >
+                        All 3
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setProdAllowedPayments(['COD'])}
+                        className="px-2 py-1 bg-neutral-800 hover:bg-neutral-700 text-neutral-200 rounded-xs cursor-pointer"
+                      >
+                        COD Only
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setProdAllowedPayments(['BANK_TRANSFER', 'ONLINE'])}
+                        className="px-2 py-1 bg-neutral-800 hover:bg-neutral-700 text-neutral-200 rounded-xs cursor-pointer"
+                      >
+                        Prepaid Only
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
+                    {/* COD */}
+                    <label
+                      className={`p-3 rounded-xs border cursor-pointer flex items-start gap-2.5 transition-colors ${
+                        prodAllowedPayments.includes('COD')
+                          ? 'bg-neutral-900 border-white text-white'
+                          : 'bg-neutral-950/40 border-neutral-800 text-neutral-400 hover:border-neutral-700'
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={prodAllowedPayments.includes('COD')}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setProdAllowedPayments([...prodAllowedPayments, 'COD']);
+                          } else {
+                            setProdAllowedPayments(prodAllowedPayments.filter((m) => m !== 'COD'));
+                          }
+                        }}
+                        className="mt-0.5 accent-white cursor-pointer"
+                      />
+                      <div>
+                        <div className="font-bold text-xs text-white">Cash on Delivery (COD)</div>
+                        <div className="text-[10px] text-neutral-400 mt-0.5">
+                          Customer pays full cash to courier at doorstep
+                        </div>
+                      </div>
+                    </label>
+
+                    {/* Bank Transfer */}
+                    <label
+                      className={`p-3 rounded-xs border cursor-pointer flex items-start gap-2.5 transition-colors ${
+                        prodAllowedPayments.includes('BANK_TRANSFER')
+                          ? 'bg-neutral-900 border-white text-white'
+                          : 'bg-neutral-950/40 border-neutral-800 text-neutral-400 hover:border-neutral-700'
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={prodAllowedPayments.includes('BANK_TRANSFER')}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setProdAllowedPayments([...prodAllowedPayments, 'BANK_TRANSFER']);
+                          } else {
+                            setProdAllowedPayments(prodAllowedPayments.filter((m) => m !== 'BANK_TRANSFER'));
+                          }
+                        }}
+                        className="mt-0.5 accent-white cursor-pointer"
+                      />
+                      <div>
+                        <div className="font-bold text-xs text-white">Direct Bank Transfer</div>
+                        <div className="text-[10px] text-neutral-400 mt-0.5">
+                          Direct IBAN / Raast payment & slip upload
+                        </div>
+                      </div>
+                    </label>
+
+                    {/* Online Payment */}
+                    <label
+                      className={`p-3 rounded-xs border cursor-pointer flex items-start gap-2.5 transition-colors ${
+                        prodAllowedPayments.includes('ONLINE')
+                          ? 'bg-neutral-900 border-white text-white'
+                          : 'bg-neutral-950/40 border-neutral-800 text-neutral-400 hover:border-neutral-700'
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={prodAllowedPayments.includes('ONLINE')}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setProdAllowedPayments([...prodAllowedPayments, 'ONLINE']);
+                          } else {
+                            setProdAllowedPayments(prodAllowedPayments.filter((m) => m !== 'ONLINE'));
+                          }
+                        }}
+                        className="mt-0.5 accent-white cursor-pointer"
+                      />
+                      <div>
+                        <div className="font-bold text-xs text-white">Online Payment</div>
+                        <div className="text-[10px] text-neutral-400 mt-0.5">
+                          Debit/Credit Card & Mobile Wallet
+                        </div>
+                      </div>
+                    </label>
+                  </div>
+
+                  {prodAllowedPayments.length === 0 && (
+                    <div className="text-[11px] text-red-400 font-mono">
+                      ⚠️ Warning: You must select at least 1 payment method for customers to checkout.
+                    </div>
+                  )}
                 </div>
               </div>
 

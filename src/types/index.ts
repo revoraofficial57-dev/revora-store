@@ -55,6 +55,7 @@ export interface DesignClothingTypeConfig {
   salePrice?: number;
   description?: string;
   isAvailable: boolean;
+  allowedPaymentMethods?: PaymentMethodType[];
 }
 
 export interface Product {
@@ -96,6 +97,7 @@ export interface Design {
   tags: string[];
   productIds: string[]; // Linked products
   availableTypes: DesignClothingTypeConfig[]; // Clothing types selected with separate pricing
+  allowedPaymentMethods?: PaymentMethodType[];
   createdAt: string;
 }
 

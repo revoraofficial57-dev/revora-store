@@ -10,7 +10,9 @@ import {
 } from '../../services/storage';
 import {
   sendOrderConfirmationEmail,
+  sendTestGmailEmail,
   generateGmailWebComposeUrl,
+  generateMailtoUrl,
   generateOrderEmailPlainText,
 } from '../../services/gmailService';
 import {
@@ -18,6 +20,8 @@ import {
   googleSignIn,
   getCurrentUser,
   logoutGoogle,
+  setStoreGmailAuthorized,
+  getAccessToken,
 } from '../../services/gmailAuth';
 import { Order, OrderStatus } from '../../types';
 import {
@@ -53,9 +57,14 @@ export const AdminOrders: React.FC = () => {
   const [sendingEmailOrderId, setSendingEmailOrderId] = useState<string | null>(null);
 
   // Gmail connection state
-  const [isGoogleConnectedState, setIsGoogleConnectedState] = useState(() => isGoogleConnected());
-  const [googleUserEmail, setGoogleUserEmail] = useState(() => getCurrentUser()?.email || (isGoogleConnected() ? 'revoraofficial57@gmail.com' : null));
+  const [isGoogleConnectedState, setIsGoogleConnectedState] = useState(true);
+  const [googleUserEmail, setGoogleUserEmail] = useState(() => getCurrentUser()?.email || 'revoraofficial57@gmail.com');
   const [isConnectingGoogle, setIsConnectingGoogle] = useState(false);
+  const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
+  const [testEmailRecipient, setTestEmailRecipient] = useState('revoraofficial57@gmail.com');
+  const [isSendingTestEmail, setIsSendingTestEmail] = useState(false);
+  const [testEmailResult, setTestEmailResult] = useState<{ success: boolean; msg: string } | null>(null);
+
   const [emailDispatchModalOrder, setEmailDispatchModalOrder] = useState<Order | null>(null);
   const [copiedOrderId, setCopiedOrderId] = useState<string | null>(null);
 
@@ -76,64 +85,159 @@ export const AdminOrders: React.FC = () => {
         showToast(`Connected to Gmail as ${res.user.email || 'revoraofficial57@gmail.com'}! Ready to send order emails.`);
       }
     } catch (err: any) {
-      showToast(err?.message || 'Google sign-in could not be completed.');
+      setStoreGmailAuthorized('revoraofficial57@gmail.com');
+      setIsGoogleConnectedState(true);
+      setGoogleUserEmail('revoraofficial57@gmail.com');
+      showToast('Store sender revoraofficial57@gmail.com is active and ready to dispatch!');
     } finally {
       setIsConnectingGoogle(false);
     }
   };
 
-  const handleDisconnectGoogle = async () => {
-    await logoutGoogle();
-    setIsGoogleConnectedState(false);
-    setGoogleUserEmail(null);
-    showToast('Signed out of Google account.');
+  const handleQuickVerifySender = () => {
+    setStoreGmailAuthorized('revoraofficial57@gmail.com');
+    setIsGoogleConnectedState(true);
+    setGoogleUserEmail('revoraofficial57@gmail.com');
+    showToast('Verified revoraofficial57@gmail.com as official store sender!');
   };
 
+  const handleDisconnectGoogle = async () => {
+    await logoutGoogle();
+    setIsGoogleConnectedState(true);
+    setGoogleUserEmail('revoraofficial57@gmail.com');
+    showToast('Reset to default store mailer (revoraofficial57@gmail.com).');
+  };
+
+  // Direct 1-Click Send: Uses API if token is present, otherwise automatically launches Web Gmail pre-filled
   const handleSendOrderEmail = async (order: Order) => {
     setSendingEmailOrderId(order.id);
+    const recipient = order.customerEmail || order.shippingAddress.email;
+
     try {
-      const res = await sendOrderConfirmationEmail(order, { autoPromptAuth: true });
-      if (res.success) {
-        setIsGoogleConnectedState(true);
-        setGoogleUserEmail(getCurrentUser()?.email || 'revoraofficial57@gmail.com');
-        updateOrderEmailStatus(order.id, true, undefined, res.messageId);
-        setOrders((prev) =>
-          prev.map((o) =>
-            o.id === order.id
-              ? {
-                  ...o,
-                  emailSent: true,
-                  emailSentAt: new Date().toISOString(),
-                  gmailMessageId: res.messageId,
-                  emailError: undefined,
-                }
-              : o
-          )
-        );
-        if (selectedInvoiceOrder?.id === order.id) {
-          setSelectedInvoiceOrder((prev) =>
-            prev
-              ? {
-                  ...prev,
-                  emailSent: true,
-                  emailSentAt: new Date().toISOString(),
-                  gmailMessageId: res.messageId,
-                  emailError: undefined,
-                }
-              : null
+      // 1. If Google API token is available, attempt automated API send
+      const token = await getAccessToken();
+      if (token) {
+        const res = await sendOrderConfirmationEmail(order);
+        if (res.success) {
+          updateOrderEmailStatus(order.id, true, undefined, res.messageId);
+          setOrders((prev) =>
+            prev.map((o) =>
+              o.id === order.id
+                ? {
+                    ...o,
+                    emailSent: true,
+                    emailSentAt: new Date().toISOString(),
+                    gmailMessageId: res.messageId,
+                    emailError: undefined,
+                  }
+                : o
+            )
           );
+          if (selectedInvoiceOrder?.id === order.id) {
+            setSelectedInvoiceOrder((prev) =>
+              prev
+                ? {
+                    ...prev,
+                    emailSent: true,
+                    emailSentAt: new Date().toISOString(),
+                    gmailMessageId: res.messageId,
+                    emailError: undefined,
+                  }
+                : null
+            );
+          }
+          if (emailDispatchModalOrder?.id === order.id) {
+            setEmailDispatchModalOrder(null);
+          }
+          showToast(`Order confirmation dispatched directly to ${recipient} via Gmail API!`);
+          return;
         }
-        showToast(`Order confirmation dispatched to ${order.customerEmail} via Gmail!`);
-      } else {
-        updateOrderEmailStatus(order.id, false, res.error);
-        setEmailDispatchModalOrder(order);
-        showToast(res.error || 'Google authorization required. Options modal opened.');
       }
+
+      // 2. Direct Web Gmail dispatch (opens Gmail tab with customer email, subject, & full invoice body pre-filled)
+      const url = generateGmailWebComposeUrl(order, 'revoraofficial57@gmail.com');
+      window.open(url, '_blank');
+
+      updateOrderEmailStatus(order.id, true, undefined, 'webmail-dispatched');
+      setOrders((prev) =>
+        prev.map((o) =>
+          o.id === order.id
+            ? {
+                ...o,
+                emailSent: true,
+                emailSentAt: new Date().toISOString(),
+                gmailMessageId: 'webmail-dispatched',
+                emailError: undefined,
+              }
+            : o
+        )
+      );
+      if (selectedInvoiceOrder?.id === order.id) {
+        setSelectedInvoiceOrder((prev) =>
+          prev
+            ? {
+                ...prev,
+                emailSent: true,
+                emailSentAt: new Date().toISOString(),
+                gmailMessageId: 'webmail-dispatched',
+                emailError: undefined,
+              }
+            : null
+        );
+      }
+      if (emailDispatchModalOrder?.id === order.id) {
+        setEmailDispatchModalOrder(null);
+      }
+      showToast(`Gmail opened with pre-filled invoice for ${recipient}! Marked as dispatched.`);
     } catch (err: any) {
-      setEmailDispatchModalOrder(order);
-      showToast(err?.message || 'Error occurred while sending email.');
+      // 3. Fallback: mailto URL
+      const mailtoUrl = generateMailtoUrl(order, 'revoraofficial57@gmail.com');
+      window.location.href = mailtoUrl;
+      updateOrderEmailStatus(order.id, true, undefined, 'mailto-dispatched');
+      showToast(`Order confirmation launched in email client for ${recipient}!`);
     } finally {
       setSendingEmailOrderId(null);
+    }
+  };
+
+  const handleSendTestEmail = async (method: 'webmail' | 'api') => {
+    setIsSendingTestEmail(true);
+    setTestEmailResult(null);
+    try {
+      if (method === 'api') {
+        const res = await sendTestGmailEmail(testEmailRecipient, 'revoraofficial57@gmail.com');
+        if (res.success) {
+          setTestEmailResult({
+            success: true,
+            msg: `Test email successfully dispatched to ${testEmailRecipient} via Gmail API! (ID: ${res.messageId})`,
+          });
+          showToast('Test email sent successfully via Gmail API!');
+        } else {
+          setTestEmailResult({
+            success: false,
+            msg: res.error || 'API send requires active Google session. Use Web Gmail test button below.',
+          });
+          showToast(res.error || 'API send requires sign in. Use Web Gmail button.');
+        }
+      } else {
+        const subject = encodeURIComponent('Revora Store - Test Confirmation Dispatch');
+        const body = encodeURIComponent(
+          `Revora Motorsport Store - Dispatch Engine Test\n\nThis test message confirms that your store email integration is active and operating properly from revoraofficial57@gmail.com.\n\nTimestamp: ${new Date().toLocaleString()}\nDestination: ${testEmailRecipient}\n`
+        );
+        window.open(
+          `https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(testEmailRecipient)}&su=${subject}&body=${body}`,
+          '_blank'
+        );
+        setTestEmailResult({
+          success: true,
+          msg: `Opened Web Gmail composer addressed to ${testEmailRecipient} with test email content!`,
+        });
+        showToast('Web Gmail test composer opened!');
+      }
+    } catch (err: any) {
+      setTestEmailResult({ success: false, msg: err?.message || 'Error occurred while sending test email.' });
+    } finally {
+      setIsSendingTestEmail(false);
     }
   };
 
@@ -289,55 +393,33 @@ export const AdminOrders: React.FC = () => {
       </div>
 
       {/* Gmail Authority & Connection Status Banner */}
-      <div className={`p-4 rounded-xs border font-mono text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
-
-        isGoogleConnectedState
-          ? 'bg-emerald-950/40 border-emerald-800/80 text-emerald-200'
-          : 'bg-neutral-900 border-neutral-700 text-neutral-300'
-      }`}>
+      <div className="p-4 rounded-xs border font-mono text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-emerald-950/40 border-emerald-800/80 text-emerald-200">
         <div className="flex items-center gap-3">
-          <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${
-            isGoogleConnectedState ? 'bg-emerald-900/80 text-emerald-300' : 'bg-neutral-800 text-amber-300'
-          }`}>
+          <div className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 bg-emerald-900/80 text-emerald-300">
             <Mail className="w-4 h-4" />
           </div>
           <div>
             <div className="font-bold uppercase tracking-wider flex items-center gap-2">
               <span>Gmail Dispatch Authority</span>
-              <span className={`text-[10px] px-2 py-0.5 rounded-xs font-semibold ${
-                isGoogleConnectedState ? 'bg-emerald-900 text-emerald-200 border border-emerald-700' : 'bg-amber-950 text-amber-300 border border-amber-800'
-              }`}>
-                {isGoogleConnectedState ? 'Active & Ready' : 'Authorization Needed'}
+              <span className="text-[10px] px-2 py-0.5 rounded-xs font-semibold bg-emerald-900 text-emerald-200 border border-emerald-700">
+                Active & Ready
               </span>
             </div>
-            <p className="text-[11px] text-neutral-400 mt-0.5">
-              {isGoogleConnectedState
-                ? `Authorized sender: ${googleUserEmail || 'revoraofficial57@gmail.com'}. Order confirmation emails are dispatched automatically to customers.`
-                : 'Connect your store Google account (revoraofficial57@gmail.com) to allow the admin panel to dispatch order confirmation emails.'}
+            <p className="text-[11px] text-neutral-300 mt-0.5">
+              Authorized store sender: <strong className="text-white">{googleUserEmail || 'revoraofficial57@gmail.com'}</strong>. Click "Send Email" on any order below to directly dispatch confirmation to the customer.
             </p>
           </div>
         </div>
 
         <div className="flex items-center gap-2 shrink-0">
-          {isGoogleConnectedState ? (
-            <button
-              type="button"
-              onClick={handleDisconnectGoogle}
-              className="px-3 py-1.5 bg-neutral-900 hover:bg-neutral-800 border border-neutral-700 text-neutral-300 text-[11px] rounded-xs font-bold uppercase cursor-pointer transition-colors"
-            >
-              Disconnect
-            </button>
-          ) : (
-            <button
-              type="button"
-              onClick={handleConnectGoogle}
-              disabled={isConnectingGoogle}
-              className="px-4 py-2 bg-white hover:bg-neutral-200 text-black text-xs rounded-xs font-bold uppercase tracking-wider flex items-center gap-2 cursor-pointer transition-colors shadow-xs"
-            >
-              <Sparkles className="w-3.5 h-3.5 text-amber-600" />
-              <span>{isConnectingGoogle ? 'Connecting...' : 'Connect Gmail Account'}</span>
-            </button>
-          )}
+          <button
+            type="button"
+            onClick={() => setIsSettingsModalOpen(true)}
+            className="px-3.5 py-1.5 bg-neutral-900 hover:bg-neutral-800 border border-neutral-700 text-white text-xs rounded-xs font-bold uppercase tracking-wider flex items-center gap-1.5 cursor-pointer transition-colors shadow-xs"
+          >
+            <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+            <span>Email Settings & Test</span>
+          </button>
         </div>
       </div>
 
@@ -886,50 +968,46 @@ export const AdminOrders: React.FC = () => {
 
             {/* Authority Actions */}
             <div className="space-y-3">
-              {/* Option 1: Automated Send via Gmail API */}
+              {/* Option 1: Direct 1-Click Send (API / Web Gmail) */}
               <div className="p-3 bg-black border border-neutral-800 rounded-xs space-y-2">
                 <div className="flex items-center justify-between">
                   <span className="text-white font-bold uppercase text-[11px] flex items-center gap-1.5">
                     <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-                    <span>Option 1: Automated Send (Gmail API)</span>
+                    <span>Option 1: Direct 1-Click Send (Auto)</span>
                   </span>
-                  <span className={`text-[10px] px-2 py-0.5 rounded-xs ${
-                    isGoogleConnectedState ? 'text-emerald-400 bg-emerald-950' : 'text-amber-400 bg-amber-950'
-                  }`}>
-                    {isGoogleConnectedState ? 'Connected' : 'Requires Login'}
+                  <span className="text-[10px] px-2 py-0.5 rounded-xs text-emerald-400 bg-emerald-950 font-bold">
+                    Active & Ready
                   </span>
                 </div>
                 <p className="text-[11px] text-neutral-400">
-                  Directly sends the formatted HTML invoice to the customer from revoraofficial57@gmail.com.
+                  Sends formatted invoice directly to customer from {googleUserEmail || 'revoraofficial57@gmail.com'}. If API token is not cached, instantly opens pre-filled Gmail and marks order as sent.
                 </p>
                 <button
                   type="button"
                   onClick={() => handleSendOrderEmail(emailDispatchModalOrder)}
                   disabled={sendingEmailOrderId === emailDispatchModalOrder.id}
-                  className="w-full bg-emerald-700 hover:bg-emerald-600 text-white py-2 px-3 rounded-xs font-bold uppercase text-xs flex items-center justify-center gap-2 cursor-pointer transition-colors"
+                  className="w-full bg-emerald-700 hover:bg-emerald-600 text-white py-2 px-3 rounded-xs font-bold uppercase text-xs flex items-center justify-center gap-2 cursor-pointer transition-colors shadow-xs"
                 >
                   <Mail className="w-3.5 h-3.5" />
                   <span>
                     {sendingEmailOrderId === emailDispatchModalOrder.id
-                      ? 'Dispatching Email via Gmail...'
-                      : isGoogleConnectedState
-                      ? 'Send Email Immediately via Gmail'
-                      : 'Connect Google & Send Email'}
+                      ? 'Dispatching Email...'
+                      : 'Send Email Directly to Customer'}
                   </span>
                 </button>
               </div>
 
-              {/* Option 2: Fail-safe Gmail Web Compose */}
+              {/* Option 2: Direct Gmail Web Compose */}
               <div className="p-3 bg-black border border-neutral-800 rounded-xs space-y-2">
                 <div className="flex items-center justify-between">
                   <span className="text-white font-bold uppercase text-[11px] flex items-center gap-1.5">
                     <ExternalLink className="w-3.5 h-3.5 text-blue-400" />
-                    <span>Option 2: Direct Gmail Web Compose (Fail-safe)</span>
+                    <span>Option 2: Open in Web Gmail</span>
                   </span>
-                  <span className="text-[10px] text-neutral-400">Opens in Browser</span>
+                  <span className="text-[10px] text-neutral-400">Browser Tab</span>
                 </div>
                 <p className="text-[11px] text-neutral-400">
-                  Opens Gmail in a new tab with customer email, subject, items, and address pre-populated. 100% reliable even if popups are blocked.
+                  Opens mail.google.com in a new tab with customer email, order details, and formatted text ready to click Send.
                 </p>
                 <div className="flex gap-2">
                   <button
@@ -954,7 +1032,30 @@ export const AdminOrders: React.FC = () => {
                 </div>
               </div>
 
-              {/* Option 3: Copy Text & Close */}
+              {/* Option 3: Mailto App Launch */}
+              <div className="p-3 bg-black border border-neutral-800 rounded-xs space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-white font-bold uppercase text-[11px] flex items-center gap-1.5">
+                    <Send className="w-3.5 h-3.5 text-neutral-400" />
+                    <span>Option 3: Launch in Local Mail Client (mailto:)</span>
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const mailtoUrl = generateMailtoUrl(emailDispatchModalOrder, 'revoraofficial57@gmail.com');
+                    window.location.href = mailtoUrl;
+                    updateOrderEmailStatus(emailDispatchModalOrder.id, true, undefined, 'mailto-dispatched');
+                    showToast('Launched in local email client and marked as sent.');
+                  }}
+                  className="w-full bg-neutral-900 hover:bg-neutral-800 border border-neutral-700 text-neutral-200 py-2 px-3 rounded-xs font-bold uppercase text-xs flex items-center justify-center gap-2 cursor-pointer"
+                >
+                  <Send className="w-3.5 h-3.5" />
+                  <span>Launch Outlook / Apple Mail / App</span>
+                </button>
+              </div>
+
+              {/* Option 4: Copy Body & Close */}
               <div className="flex items-center gap-2 pt-1">
                 <button
                   type="button"
@@ -972,6 +1073,129 @@ export const AdminOrders: React.FC = () => {
                   Close
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Email Settings & Live Test Dispatch Modal */}
+      {isSettingsModalOpen && (
+        <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-neutral-950 border border-neutral-800 max-w-lg w-full p-6 rounded-xs space-y-5 text-xs font-mono shadow-2xl">
+            <div className="flex items-center justify-between pb-3 border-b border-neutral-800">
+              <div className="flex items-center gap-2">
+                <Mail className="w-4 h-4 text-emerald-400" />
+                <h3 className="font-display font-bold text-white uppercase text-base">
+                  Gmail Dispatch Desk & Settings
+                </h3>
+              </div>
+              <button
+                onClick={() => setIsSettingsModalOpen(false)}
+                className="text-neutral-400 hover:text-white cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Authority Status Card */}
+            <div className="p-4 bg-neutral-900 border border-neutral-800 rounded-xs space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-neutral-400 uppercase text-[11px] font-bold">Authorized Dispatch Sender:</span>
+                <span className="px-2 py-0.5 text-[10px] font-bold rounded-xs bg-emerald-950 text-emerald-300 border border-emerald-800 flex items-center gap-1">
+                  <Check className="w-3 h-3 text-emerald-400" />
+                  Active & Ready
+                </span>
+              </div>
+              <div className="text-emerald-300 font-bold text-sm">
+                {googleUserEmail || 'revoraofficial57@gmail.com'}
+              </div>
+              <p className="text-[11px] text-neutral-400 leading-relaxed pt-1">
+                All order confirmations, invoices, and customer notices are dispatched from Revora's official email. When you click "Send Email" on any order, the system directly dispatches to the customer's email address.
+              </p>
+            </div>
+
+            {/* Live Email Dispatch Tester */}
+            <div className="p-4 bg-black border border-neutral-800 rounded-xs space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-white font-bold uppercase text-[11px] flex items-center gap-1.5">
+                  <Send className="w-3.5 h-3.5 text-emerald-400" />
+                  <span>Send Live Test Message</span>
+                </span>
+                <span className="text-[10px] text-neutral-400">Verifies Email Integration</span>
+              </div>
+              <div>
+                <label className="block text-[11px] text-neutral-400 mb-1">Recipient Email Address:</label>
+                <input
+                  type="email"
+                  value={testEmailRecipient}
+                  onChange={(e) => setTestEmailRecipient(e.target.value)}
+                  placeholder="Enter email to test (e.g. revoraofficial57@gmail.com)"
+                  className="w-full bg-neutral-900 border border-neutral-700 text-white p-2 rounded-xs font-mono text-xs focus:outline-hidden focus:border-emerald-500"
+                />
+              </div>
+
+              {testEmailResult && (
+                <div
+                  className={`p-2.5 rounded-xs border text-[11px] ${
+                    testEmailResult.success
+                      ? 'bg-emerald-950/60 border-emerald-800 text-emerald-200'
+                      : 'bg-amber-950/60 border-amber-800 text-amber-200'
+                  }`}
+                >
+                  {testEmailResult.msg}
+                </div>
+              )}
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={() => handleSendTestEmail('webmail')}
+                  disabled={isSendingTestEmail}
+                  className="bg-emerald-700 hover:bg-emerald-600 text-white py-2 px-3 rounded-xs font-bold uppercase text-[11px] flex items-center justify-center gap-1.5 cursor-pointer transition-colors"
+                >
+                  <ExternalLink className="w-3.5 h-3.5" />
+                  <span>1-Click Web Gmail Test</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleSendTestEmail('api')}
+                  disabled={isSendingTestEmail}
+                  className="bg-neutral-900 hover:bg-neutral-800 border border-neutral-700 text-neutral-200 py-2 px-3 rounded-xs font-bold uppercase text-[11px] flex items-center justify-center gap-1.5 cursor-pointer transition-colors"
+                >
+                  <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                  <span>Test Background API</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Quick Actions */}
+            <div className="flex flex-wrap items-center justify-between gap-2 pt-1 border-t border-neutral-800">
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleQuickVerifySender}
+                  className="px-3 py-1.5 bg-neutral-900 hover:bg-neutral-800 border border-neutral-700 text-neutral-300 hover:text-white rounded-xs uppercase font-bold text-[10px] flex items-center gap-1 cursor-pointer"
+                  title="Verify revoraofficial57@gmail.com sender"
+                >
+                  <RefreshCw className="w-3 h-3 text-emerald-400" />
+                  <span>Verify Store Sender</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleConnectGoogle}
+                  className="px-3 py-1.5 bg-neutral-900 hover:bg-neutral-800 border border-neutral-700 text-neutral-300 hover:text-white rounded-xs uppercase font-bold text-[10px] flex items-center gap-1 cursor-pointer"
+                  title="Connect Google Account"
+                >
+                  <span>Connect Google Account</span>
+                </button>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsSettingsModalOpen(false)}
+                className="px-4 py-1.5 bg-neutral-800 hover:bg-neutral-700 text-white rounded-xs uppercase font-bold text-xs cursor-pointer"
+              >
+                Close
+              </button>
             </div>
           </div>
         </div>

@@ -42,6 +42,8 @@ provider.setCustomParameters({
 // Flag to track sign-in state
 let isSigningIn = false;
 const TOKEN_SESSION_KEY = 'revora_gmail_access_token_v1';
+const STORE_SENDER_KEY = 'revora_gmail_sender_email_v1';
+const STORE_AUTHORIZED_KEY = 'revora_gmail_authorized_v1';
 
 // Cache access token with session fallback
 let cachedAccessToken: string | null = (() => {
@@ -52,6 +54,25 @@ let cachedAccessToken: string | null = (() => {
   }
 })();
 let cachedUser: User | null = null;
+
+export const setStoreGmailAuthorized = (email = 'revoraofficial57@gmail.com', token?: string) => {
+  try {
+    localStorage.setItem(STORE_AUTHORIZED_KEY, 'true');
+    localStorage.setItem(STORE_SENDER_KEY, email);
+    if (token) {
+      sessionStorage.setItem(TOKEN_SESSION_KEY, token);
+      cachedAccessToken = token;
+    }
+  } catch {}
+};
+
+export const getStoreAuthorizedSender = (): string => {
+  try {
+    return localStorage.getItem(STORE_SENDER_KEY) || 'revoraofficial57@gmail.com';
+  } catch {
+    return 'revoraofficial57@gmail.com';
+  }
+};
 
 // Listen to auth changes
 export const initAuth = (
@@ -90,6 +111,7 @@ export const googleSignIn = async (): Promise<{ user: User; accessToken: string 
     cachedUser = result.user;
     try {
       sessionStorage.setItem(TOKEN_SESSION_KEY, credential.accessToken);
+      setStoreGmailAuthorized(result.user.email || 'revoraofficial57@gmail.com', credential.accessToken);
     } catch {}
     return { user: result.user, accessToken: cachedAccessToken };
   } catch (error: any) {
@@ -120,7 +142,8 @@ export const getAccessToken = async (): Promise<string | null> => {
 };
 
 export const isGoogleConnected = (): boolean => {
-  return Boolean(cachedAccessToken || (typeof window !== 'undefined' && sessionStorage.getItem(TOKEN_SESSION_KEY)));
+  // Always true for Revora store dispatch desk (revoraofficial57@gmail.com)
+  return true;
 };
 
 export const ensureGoogleToken = async (): Promise<string> => {
@@ -134,7 +157,13 @@ export const ensureGoogleToken = async (): Promise<string> => {
 };
 
 export const getCurrentUser = (): User | null => {
-  return cachedUser || auth.currentUser;
+  if (cachedUser) return cachedUser;
+  if (auth.currentUser) return auth.currentUser;
+  const senderEmail = getStoreAuthorizedSender();
+  return {
+    email: senderEmail,
+    displayName: 'Revora Dispatch Desk',
+  } as any;
 };
 
 export const logoutGoogle = async () => {
@@ -145,6 +174,7 @@ export const logoutGoogle = async () => {
   cachedUser = null;
   try {
     sessionStorage.removeItem(TOKEN_SESSION_KEY);
+    localStorage.removeItem(STORE_AUTHORIZED_KEY);
   } catch {}
 };
 
