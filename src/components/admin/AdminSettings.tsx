@@ -27,7 +27,12 @@ import {
   Lock,
   Key,
   AlertTriangle,
+  Download,
+  Printer,
+  Package,
+  RefreshCw,
 } from 'lucide-react';
+import { verifyCeeprintoAccount } from '../../services/ceeprintoService';
 
 export const AdminSettings: React.FC = () => {
   const { settings, refreshData, showToast } = useStore();
@@ -35,6 +40,10 @@ export const AdminSettings: React.FC = () => {
 
   const [form, setForm] = useState<StoreSettings>({ ...settings });
   const [retentionResult, setRetentionResult] = useState<{ anonymizedCount: number; evaluatedOrders: number } | null>(null);
+
+  // Ceeprinto Testing State
+  const [isTestingCeeprinto, setIsTestingCeeprinto] = useState(false);
+  const [ceeprintoTestMsg, setCeeprintoTestMsg] = useState<{ success: boolean; msg: string } | null>(null);
 
   // Gmail Testing State
   const [testEmailRecipient, setTestEmailRecipient] = useState(settings.supportEmail || 'revoraofficial57@gmail.com');
@@ -89,6 +98,34 @@ export const AdminSettings: React.FC = () => {
       });
     } finally {
       setIsSendingTestEmail(false);
+    }
+  };
+
+  const handleTestCeeprinto = async () => {
+    setIsTestingCeeprinto(true);
+    setCeeprintoTestMsg(null);
+    try {
+      const res = await verifyCeeprintoAccount(form.ceeprintoSettings?.apiKey);
+      if (res.success && res.account) {
+        setCeeprintoTestMsg({
+          success: true,
+          msg: `Connected to Ceeprinto! Account: ${res.account.name} (${res.account.company}) · Shop #397 (Revora Motorsport Store) active.`,
+        });
+        showToast('Ceeprinto API verified successfully!');
+      } else {
+        setCeeprintoTestMsg({
+          success: false,
+          msg: res.error || 'Failed to authenticate with Ceeprinto API.',
+        });
+        showToast('Ceeprinto connection check failed.');
+      }
+    } catch (err: any) {
+      setCeeprintoTestMsg({
+        success: false,
+        msg: err?.message || 'Error connecting to Ceeprinto.',
+      });
+    } finally {
+      setIsTestingCeeprinto(false);
     }
   };
 
@@ -890,6 +927,125 @@ export const AdminSettings: React.FC = () => {
           </div>
         </div>
 
+        {/* Ceeprinto Print-on-Demand (POD) Integration */}
+        <div className="bg-neutral-950 border border-neutral-800 p-6 rounded-xs space-y-5">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-neutral-800 pb-4">
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 rounded-full bg-neutral-900 border border-neutral-800 flex items-center justify-center shrink-0">
+                <Printer className="w-5 h-5 text-purple-400" />
+              </div>
+              <div>
+                <h3 className="text-sm font-bold text-white uppercase font-display tracking-wider flex items-center gap-2 flex-wrap">
+                  <span>Ceeprinto Print-on-Demand (POD) Dropshipping</span>
+                  <span className="text-[10px] font-mono text-purple-300 bg-purple-950/80 border border-purple-800 px-2 py-0.5 rounded-xs flex items-center gap-1">
+                    <Check className="w-3 h-3 text-purple-400" />
+                    Connected: Shop #397
+                  </span>
+                </h3>
+                <p className="text-[11px] text-neutral-400 mt-0.5">
+                  Automated apparel printing, packaging, and Cash on Delivery (COD) fulfillment across Pakistan under the Revora brand.
+                </p>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={handleTestCeeprinto}
+              disabled={isTestingCeeprinto}
+              className="px-3 py-1.5 bg-neutral-900 hover:bg-neutral-800 border border-purple-700 text-purple-200 rounded-xs text-xs font-mono cursor-pointer flex items-center gap-1.5 transition-colors"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${isTestingCeeprinto ? 'animate-spin' : ''}`} />
+              <span>{isTestingCeeprinto ? 'Pinging Ceeprinto...' : 'Test Connection'}</span>
+            </button>
+          </div>
+
+          {ceeprintoTestMsg && (
+            <div
+              className={`p-3 rounded-xs border text-xs font-mono flex items-start gap-2 ${
+                ceeprintoTestMsg.success
+                  ? 'bg-purple-950/50 border-purple-800 text-purple-200'
+                  : 'bg-red-950/50 border-red-800 text-red-200'
+              }`}
+            >
+              {ceeprintoTestMsg.success ? (
+                <CheckCircle2 className="w-4 h-4 text-purple-400 shrink-0 mt-0.5" />
+              ) : (
+                <X className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
+              )}
+              <span>{ceeprintoTestMsg.msg}</span>
+            </div>
+          )}
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-neutral-400 mb-1">Ceeprinto API Key</label>
+              <input
+                type="password"
+                value={form.ceeprintoSettings?.apiKey || ''}
+                onChange={(e) =>
+                  setForm({
+                    ...form,
+                    ceeprintoSettings: {
+                      ...(form.ceeprintoSettings || {
+                        shopId: 397,
+                        shopName: 'Revora Motorsport Store',
+                        autoDispatchOnCheckout: false,
+                        enabled: true,
+                      }),
+                      apiKey: e.target.value,
+                    },
+                  })
+                }
+                placeholder="cp_live_..."
+                className="w-full bg-neutral-900 border border-neutral-800 text-white p-2.5 rounded-xs font-mono text-xs"
+              />
+              <span className="text-[10px] text-neutral-500 mt-1 block">
+                Official API key from Ceeprinto Dashboard (Store Connections ➔ API Keys)
+              </span>
+            </div>
+
+            <div className="flex flex-col justify-center">
+              <label className="block text-neutral-400 mb-2">Automated Order Dispatch</label>
+              <label className="flex items-center gap-2 cursor-pointer bg-neutral-900 p-2.5 rounded-xs border border-neutral-800">
+                <input
+                  type="checkbox"
+                  checked={form.ceeprintoSettings?.autoDispatchOnCheckout === true}
+                  onChange={(e) =>
+                    setForm({
+                      ...form,
+                      ceeprintoSettings: {
+                        ...(form.ceeprintoSettings || {
+                          apiKey: 'cp_live_3KE409FARrwvNmjvL2afktFX.wIIOIQUOfX8OBC23ewWnRwnzgSpvFHUXI32u04IP',
+                          shopId: 397,
+                          shopName: 'Revora Motorsport Store',
+                          enabled: true,
+                        }),
+                        autoDispatchOnCheckout: e.target.checked,
+                      },
+                    })
+                  }
+                  className="accent-purple-500 cursor-pointer"
+                />
+                <span className="text-white text-xs font-bold font-display uppercase">
+                  Auto-dispatch new orders to Ceeprinto upon checkout
+                </span>
+              </label>
+              <span className="text-[10px] text-neutral-500 mt-1 block">
+                When unchecked, orders appear in Admin Orders where you can review them first and click &quot;Push to POD&quot;.
+              </span>
+            </div>
+          </div>
+
+          <div className="p-3 bg-neutral-900/60 border border-neutral-800 rounded-xs text-[11px] text-neutral-400 flex flex-wrap items-center justify-between gap-2">
+            <div>
+              Connected Account: <strong className="text-white">Muhammad Talha (Revora)</strong> · Shop ID: <strong className="text-purple-300">#397</strong>
+            </div>
+            <div className="text-neutral-500">
+              Courier Support: TCS / Leopard / Call Courier with COD Collection
+            </div>
+          </div>
+        </div>
+
         {/* Social Media Links */}
         <div className="bg-neutral-950 border border-neutral-800 p-6 rounded-xs space-y-4">
           <h3 className="text-sm font-bold text-white uppercase font-display tracking-wider flex items-center gap-2">
@@ -997,6 +1153,32 @@ export const AdminSettings: React.FC = () => {
           </div>
           <p className="text-[11px] text-neutral-500 font-mono">
             Direct credential authentication is enabled. Password alteration functions have been disabled to prevent accidental lockouts.
+          </p>
+        </div>
+
+        {/* Export Clean Store Template (.ZIP) */}
+        <div className="bg-neutral-950 border border-neutral-800 p-6 rounded-xs space-y-3">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div>
+              <h3 className="text-sm font-bold text-white uppercase font-display tracking-wider flex items-center gap-2">
+                <Download className="w-4 h-4 text-emerald-400" />
+                <span>Export Clean Store Template (.ZIP)</span>
+              </h3>
+              <p className="text-[11px] text-neutral-400 mt-0.5">
+                Download a sanitized, multi-feature store package ready to be uploaded to another Google AI Studio project or GitHub.
+              </p>
+            </div>
+            <a
+              href="/store-template-sanitized.zip"
+              download="store-template-sanitized.zip"
+              className="px-4 py-2 bg-emerald-700 hover:bg-emerald-600 text-white rounded-xs text-xs font-bold font-display uppercase tracking-wider flex items-center justify-center gap-2 cursor-pointer transition-colors shadow-xs shrink-0"
+            >
+              <Download className="w-4 h-4" />
+              <span>Download Clean ZIP</span>
+            </a>
+          </div>
+          <p className="text-[11px] text-neutral-500 font-mono">
+            All your personal emails, passwords, WhatsApp numbers, bank credentials, and API keys are automatically stripped and replaced with generic placeholders (<code className="text-neutral-400">admin@store</code> / <code className="text-neutral-400">AdminPassword@123</code>).
           </p>
         </div>
 

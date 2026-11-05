@@ -1006,6 +1006,36 @@ export function updateOrderEmailStatus(
   return order;
 }
 
+export function updateOrderCeeprintoStatus(
+  orderId: string,
+  ceeprintoData: {
+    ceeprintoOrderId?: number;
+    ceeprintoShopId?: number;
+    ceeprintoStatus?: string;
+    ceeprintoTrackingNumber?: string;
+    ceeprintoCourier?: string;
+    ceeprintoError?: string;
+  }
+): Order | null {
+  const orders = getAllOrders();
+  const order = orders.find((o) => o.id === orderId);
+  if (!order) return null;
+
+  if (ceeprintoData.ceeprintoOrderId !== undefined) {
+    order.ceeprintoOrderId = ceeprintoData.ceeprintoOrderId;
+    order.ceeprintoDispatchedAt = new Date().toISOString();
+    order.ceeprintoError = undefined;
+  }
+  if (ceeprintoData.ceeprintoShopId !== undefined) order.ceeprintoShopId = ceeprintoData.ceeprintoShopId;
+  if (ceeprintoData.ceeprintoStatus !== undefined) order.ceeprintoStatus = ceeprintoData.ceeprintoStatus;
+  if (ceeprintoData.ceeprintoTrackingNumber !== undefined) order.ceeprintoTrackingNumber = ceeprintoData.ceeprintoTrackingNumber;
+  if (ceeprintoData.ceeprintoCourier !== undefined) order.ceeprintoCourier = ceeprintoData.ceeprintoCourier;
+  if (ceeprintoData.ceeprintoError !== undefined) order.ceeprintoError = ceeprintoData.ceeprintoError;
+
+  safeSet(STORAGE_KEYS.ORDERS, orders);
+  return order;
+}
+
 // -------------------------------------------------------------
 // CUSTOMER COMPLAINTS & SUPPORT PORTAL
 // -------------------------------------------------------------

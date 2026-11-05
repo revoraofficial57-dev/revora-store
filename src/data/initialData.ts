@@ -524,6 +524,15 @@ export const INITIAL_STORE_SETTINGS: StoreSettings = {
     isConnected: false,
     userEmail: 'revoraofficial57@gmail.com',
   },
+  ceeprintoSettings: {
+    apiKey: 'cp_live_3KE409FARrwvNmjvL2afktFX.wIIOIQUOfX8OBC23ewWnRwnzgSpvFHUXI32u04IP',
+    shopId: 397,
+    shopName: 'Revora Motorsport Store',
+    autoDispatchOnCheckout: false,
+    enabled: true,
+    accountEmail: 'revoraofficial57@gmail.com',
+    accountName: 'Muhammad Talha (Revora)',
+  },
 };
 
 export const INITIAL_REVIEWS: ProductReview[] = [

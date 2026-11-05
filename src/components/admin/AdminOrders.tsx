@@ -7,7 +7,14 @@ import {
   updatePaymentVerification,
   recordRemainingPayment,
   updateOrderEmailStatus,
+  updateOrderCeeprintoStatus,
 } from '../../services/storage';
+import {
+  dispatchOrderToCeeprinto,
+  getCeeprintoOrderStatus,
+  verifyCeeprintoAccount,
+  DEFAULT_CEEPRINTO_SHOP_ID,
+} from '../../services/ceeprintoService';
 import {
   sendOrderConfirmationEmail,
   sendTestGmailEmail,
@@ -44,10 +51,13 @@ import {
   Check,
   RefreshCw,
   Sparkles,
+  Package,
+  Truck,
+  Layers,
 } from 'lucide-react';
 
 export const AdminOrders: React.FC = () => {
-  const { formatPKR, showToast } = useStore();
+  const { formatPKR, showToast, settings } = useStore();
   const { username } = useAdmin();
 
   const [orders, setOrders] = useState<Order[]>(() => getAllOrders());
@@ -74,6 +84,15 @@ export const AdminOrders: React.FC = () => {
 
   // Invoice / Details modal
   const [selectedInvoiceOrder, setSelectedInvoiceOrder] = useState<Order | null>(null);
+
+  // Ceeprinto Fulfillment State
+  const [dispatchingCeeprintoId, setDispatchingCeeprintoId] = useState<string | null>(null);
+  const [selectedCeeprintoOrder, setSelectedCeeprintoOrder] = useState<Order | null>(null);
+  const [ceeprintoOrderEvents, setCeeprintoOrderEvents] = useState<any[] | null>(null);
+  const [isLoadingCeeprintoEvents, setIsLoadingCeeprintoEvents] = useState(false);
+  const [isCeeprintoSettingsModalOpen, setIsCeeprintoSettingsModalOpen] = useState(false);
+  const [isTestingCeeprinto, setIsTestingCeeprinto] = useState(false);
+  const [ceeprintoTestResult, setCeeprintoTestResult] = useState<{ success: boolean; msg: string } | null>(null);
 
   const handleConnectGoogle = async () => {
     setIsConnectingGoogle(true);
@@ -278,6 +297,108 @@ export const AdminOrders: React.FC = () => {
     setOrders(getAllOrders());
   };
 
+  const handlePushToCeeprinto = async (order: Order) => {
+    setDispatchingCeeprintoId(order.id);
+    try {
+      const res = await dispatchOrderToCeeprinto(order, { settings });
+      if (res.success && res.ceeprintoOrderId) {
+        updateOrderCeeprintoStatus(order.id, {
+          ceeprintoOrderId: res.ceeprintoOrderId,
+          ceeprintoShopId: res.shopId,
+          ceeprintoStatus: res.status || 'received',
+        });
+        setOrders((prev) =>
+          prev.map((o) =>
+            o.id === order.id
+              ? {
+                  ...o,
+                  ceeprintoOrderId: res.ceeprintoOrderId,
+                  ceeprintoShopId: res.shopId,
+                  ceeprintoStatus: res.status || 'received',
+                  ceeprintoDispatchedAt: new Date().toISOString(),
+                }
+              : o
+          )
+        );
+        if (selectedInvoiceOrder?.id === order.id) {
+          setSelectedInvoiceOrder((prev) =>
+            prev
+              ? {
+                  ...prev,
+                  ceeprintoOrderId: res.ceeprintoOrderId,
+                  ceeprintoShopId: res.shopId,
+                  ceeprintoStatus: res.status || 'received',
+                  ceeprintoDispatchedAt: new Date().toISOString(),
+                }
+              : null
+          );
+        }
+        showToast(`Dispatched to Ceeprinto (POD #${res.ceeprintoOrderId})! Printing & fulfillment initiated.`);
+      } else {
+        updateOrderCeeprintoStatus(order.id, {
+          ceeprintoError: res.error,
+        });
+        showToast(`Ceeprinto Notice: ${res.error || 'Failed to dispatch order'}`);
+      }
+    } catch (err: any) {
+      showToast(err?.message || 'Failed to connect with Ceeprinto');
+    } finally {
+      setDispatchingCeeprintoId(null);
+    }
+  };
+
+  const handleInspectCeeprintoOrder = async (order: Order) => {
+    setSelectedCeeprintoOrder(order);
+    setCeeprintoOrderEvents(null);
+    if (order.ceeprintoOrderId) {
+      setIsLoadingCeeprintoEvents(true);
+      try {
+        const res = await getCeeprintoOrderStatus(order.ceeprintoOrderId);
+        if (res.success) {
+          if (res.status && res.status !== order.ceeprintoStatus) {
+            updateOrderCeeprintoStatus(order.id, { ceeprintoStatus: res.status });
+            setOrders((prev) =>
+              prev.map((o) => (o.id === order.id ? { ...o, ceeprintoStatus: res.status } : o))
+            );
+          }
+          setCeeprintoOrderEvents(res.events || []);
+        }
+      } catch (e) {
+        console.error(e);
+      } finally {
+        setIsLoadingCeeprintoEvents(false);
+      }
+    }
+  };
+
+  const handleTestCeeprintoConnection = async () => {
+    setIsTestingCeeprinto(true);
+    setCeeprintoTestResult(null);
+    try {
+      const res = await verifyCeeprintoAccount();
+      if (res.success && res.account) {
+        setCeeprintoTestResult({
+          success: true,
+          msg: `Connected to Ceeprinto API! Account: ${res.account.name} (${res.account.company}) · Shop #397 (Revora Motorsport Store) active.`,
+        });
+        showToast('Ceeprinto connection verified successfully!');
+      } else {
+        setCeeprintoTestResult({
+          success: false,
+          msg: res.error || 'Failed to authenticate with Ceeprinto API.',
+        });
+        showToast('Ceeprinto connection check failed.');
+      }
+    } catch (err: any) {
+      setCeeprintoTestResult({
+        success: false,
+        msg: err?.message || 'Network exception testing Ceeprinto.',
+      });
+    } finally {
+      setIsTestingCeeprinto(false);
+    }
+  };
+
   const handleStatusChange = (orderId: string, newStatus: OrderStatus) => {
     try {
       updateOrderStatus(orderId, newStatus, `Status updated by ${username}`, username);
@@ -392,33 +513,61 @@ export const AdminOrders: React.FC = () => {
         </div>
       </div>
 
-      {/* Gmail Authority & Connection Status Banner */}
-      <div className="p-4 rounded-xs border font-mono text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-emerald-950/40 border-emerald-800/80 text-emerald-200">
-        <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 bg-emerald-900/80 text-emerald-300">
-            <Mail className="w-4 h-4" />
-          </div>
-          <div>
-            <div className="font-bold uppercase tracking-wider flex items-center gap-2">
-              <span>Gmail Dispatch Authority</span>
-              <span className="text-[10px] px-2 py-0.5 rounded-xs font-semibold bg-emerald-900 text-emerald-200 border border-emerald-700">
-                Active & Ready
-              </span>
+      {/* Integrations Header Banners (Gmail & Ceeprinto POD) */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+        {/* Gmail Authority */}
+        <div className="p-4 rounded-xs border font-mono text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-emerald-950/40 border-emerald-800/80 text-emerald-200">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 bg-emerald-900/80 text-emerald-300">
+              <Mail className="w-4 h-4" />
             </div>
-            <p className="text-[11px] text-neutral-300 mt-0.5">
-              Authorized store sender: <strong className="text-white">{googleUserEmail || 'revoraofficial57@gmail.com'}</strong>. Click "Send Email" on any order below to directly dispatch confirmation to the customer.
-            </p>
+            <div>
+              <div className="font-bold uppercase tracking-wider flex items-center gap-2">
+                <span>Gmail Dispatch Authority</span>
+                <span className="text-[10px] px-2 py-0.5 rounded-xs font-semibold bg-emerald-900 text-emerald-200 border border-emerald-700">
+                  Active & Ready
+                </span>
+              </div>
+              <p className="text-[11px] text-neutral-300 mt-0.5">
+                Official store sender: <strong className="text-white">{googleUserEmail || 'revoraofficial57@gmail.com'}</strong>.
+              </p>
+            </div>
           </div>
-        </div>
-
-        <div className="flex items-center gap-2 shrink-0">
           <button
             type="button"
             onClick={() => setIsSettingsModalOpen(true)}
-            className="px-3.5 py-1.5 bg-neutral-900 hover:bg-neutral-800 border border-neutral-700 text-white text-xs rounded-xs font-bold uppercase tracking-wider flex items-center gap-1.5 cursor-pointer transition-colors shadow-xs"
+            className="px-3.5 py-1.5 bg-neutral-900 hover:bg-neutral-800 border border-neutral-700 text-white text-xs rounded-xs font-bold uppercase tracking-wider flex items-center gap-1.5 cursor-pointer transition-colors shadow-xs shrink-0"
           >
             <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-            <span>Email Settings & Test</span>
+            <span>Email Settings</span>
+          </button>
+        </div>
+
+        {/* Ceeprinto POD Dropshipping */}
+        <div className="p-4 rounded-xs border font-mono text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-purple-950/30 border-purple-800/80 text-purple-200">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 bg-purple-900/80 text-purple-300">
+              <Printer className="w-4 h-4" />
+            </div>
+            <div>
+              <div className="font-bold uppercase tracking-wider flex items-center gap-2">
+                <span>Ceeprinto POD Dropshipping</span>
+                <span className="text-[10px] px-2 py-0.5 rounded-xs font-semibold bg-purple-900 text-purple-200 border border-purple-700">
+                  Connected · Shop #397
+                </span>
+              </div>
+              <p className="text-[11px] text-neutral-300 mt-0.5">
+                Pakistan on-demand printing & COD: <strong className="text-white">Revora (Muhammad Talha)</strong>.
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => setIsCeeprintoSettingsModalOpen(true)}
+            className="px-3.5 py-1.5 bg-neutral-900 hover:bg-neutral-800 border border-neutral-700 text-white text-xs rounded-xs font-bold uppercase tracking-wider flex items-center gap-1.5 cursor-pointer transition-colors shadow-xs shrink-0"
+          >
+            <Package className="w-3.5 h-3.5 text-purple-400" />
+            <span>Ceeprinto Sync</span>
           </button>
         </div>
       </div>
@@ -436,13 +585,14 @@ export const AdminOrders: React.FC = () => {
               <th className="p-3">Payment</th>
               <th className="p-3">Proof Status</th>
               <th className="p-3">Order Status</th>
+              <th className="p-3">Ceeprinto POD</th>
               <th className="p-3 text-right">Actions</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-neutral-900">
             {filteredOrders.length === 0 ? (
               <tr>
-                <td colSpan={8} className="p-8 text-center text-neutral-500">
+                <td colSpan={9} className="p-8 text-center text-neutral-500">
                   No orders match current filter criteria.
                 </td>
               </tr>
@@ -519,6 +669,30 @@ export const AdminOrders: React.FC = () => {
                       <option value="Cancelled">Cancelled</option>
                       <option value="Refunded">Refunded</option>
                     </select>
+                  </td>
+                  <td className="p-3">
+                    {o.ceeprintoOrderId ? (
+                      <button
+                        type="button"
+                        onClick={() => handleInspectCeeprintoOrder(o)}
+                        className="px-2 py-1 bg-purple-950/80 hover:bg-purple-900 border border-purple-700 text-purple-200 rounded-xs text-[10px] font-bold flex items-center gap-1 cursor-pointer transition-colors"
+                        title="Click to view real-time Ceeprinto fulfillment events and tracking status"
+                      >
+                        <Package className="w-3 h-3 text-purple-400" />
+                        <span>POD #{o.ceeprintoOrderId}</span>
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => handlePushToCeeprinto(o)}
+                        disabled={dispatchingCeeprintoId === o.id}
+                        className="px-2 py-1 bg-neutral-900 hover:bg-purple-950/70 border border-neutral-700 hover:border-purple-600 text-neutral-300 hover:text-purple-200 rounded-xs text-[10px] font-bold flex items-center gap-1 cursor-pointer transition-colors"
+                        title="Dispatch this order to Ceeprinto for on-demand apparel printing & delivery"
+                      >
+                        <Printer className="w-3 h-3 text-purple-400" />
+                        <span>{dispatchingCeeprintoId === o.id ? 'Pushing...' : 'Push to POD'}</span>
+                      </button>
+                    )}
                   </td>
                   <td className="p-3 text-right">
                     <div className="flex items-center justify-end gap-1.5">
@@ -1192,6 +1366,224 @@ export const AdminOrders: React.FC = () => {
               <button
                 type="button"
                 onClick={() => setIsSettingsModalOpen(false)}
+                className="px-4 py-1.5 bg-neutral-800 hover:bg-neutral-700 text-white rounded-xs uppercase font-bold text-xs cursor-pointer"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Ceeprinto POD Order Inspector Modal */}
+      {selectedCeeprintoOrder && (
+        <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-neutral-950 border border-neutral-800 max-w-lg w-full p-6 rounded-xs space-y-4 font-mono text-xs shadow-2xl">
+            <div className="flex items-center justify-between pb-3 border-b border-neutral-800">
+              <div className="flex items-center gap-2">
+                <Printer className="w-4 h-4 text-purple-400" />
+                <h3 className="font-display font-bold text-white uppercase text-base">
+                  Ceeprinto POD Status · {selectedCeeprintoOrder.orderNumber}
+                </h3>
+              </div>
+              <button
+                onClick={() => setSelectedCeeprintoOrder(null)}
+                className="text-neutral-400 hover:text-white cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Status Overview Card */}
+            <div className="p-4 bg-purple-950/20 border border-purple-800/80 rounded-xs space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-neutral-400 uppercase text-[11px] font-bold">Fulfillment Status:</span>
+                <span className="px-2 py-0.5 text-[10px] font-bold rounded-xs bg-purple-900 text-purple-200 border border-purple-700 uppercase">
+                  {selectedCeeprintoOrder.ceeprintoStatus || 'Received'}
+                </span>
+              </div>
+              <div className="flex items-center justify-between text-neutral-300">
+                <span>Ceeprinto Order ID:</span>
+                <span className="text-white font-bold select-all">#{selectedCeeprintoOrder.ceeprintoOrderId}</span>
+              </div>
+              <div className="flex items-center justify-between text-neutral-300">
+                <span>Connected Shop:</span>
+                <span className="text-purple-300">Shop #397 (Revora Motorsport Store)</span>
+              </div>
+              {selectedCeeprintoOrder.ceeprintoDispatchedAt && (
+                <div className="flex items-center justify-between text-neutral-400 text-[11px]">
+                  <span>Dispatched At:</span>
+                  <span>{new Date(selectedCeeprintoOrder.ceeprintoDispatchedAt).toLocaleString()}</span>
+                </div>
+              )}
+            </div>
+
+            {/* Shipping & Delivery Target */}
+            <div className="p-3 bg-neutral-900 border border-neutral-800 rounded-xs space-y-1">
+              <div className="text-[11px] text-neutral-400 font-bold uppercase pb-1 border-b border-neutral-800 flex items-center gap-1.5">
+                <Truck className="w-3.5 h-3.5 text-purple-400" />
+                <span>Courier Destination & COD Amount</span>
+              </div>
+              <div className="flex justify-between text-neutral-300 pt-1">
+                <span>Recipient:</span>
+                <span className="text-white font-bold">{selectedCeeprintoOrder.customerName} ({selectedCeeprintoOrder.customerPhone})</span>
+              </div>
+              <div className="flex justify-between text-neutral-300">
+                <span>Address:</span>
+                <span className="text-white text-right max-w-xs">{selectedCeeprintoOrder.shippingAddress.address}, {selectedCeeprintoOrder.shippingAddress.city}</span>
+              </div>
+              <div className="flex justify-between text-amber-400 font-bold pt-1">
+                <span>Courier COD Collection:</span>
+                <span>{formatPKR(selectedCeeprintoOrder.remainingBalance > 0 ? selectedCeeprintoOrder.remainingBalance : selectedCeeprintoOrder.total)}</span>
+              </div>
+            </div>
+
+            {/* Real-Time Events from Ceeprinto */}
+            <div className="p-3 bg-black border border-neutral-800 rounded-xs space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-white font-bold uppercase text-[11px] flex items-center gap-1.5">
+                  <Layers className="w-3.5 h-3.5 text-purple-400" />
+                  <span>Real-Time Fulfillment Timeline</span>
+                </span>
+                <button
+                  type="button"
+                  onClick={() => handleInspectCeeprintoOrder(selectedCeeprintoOrder)}
+                  disabled={isLoadingCeeprintoEvents}
+                  className="text-[10px] text-purple-400 hover:text-purple-300 underline cursor-pointer"
+                >
+                  {isLoadingCeeprintoEvents ? 'Refreshing...' : 'Refresh Timeline'}
+                </button>
+              </div>
+
+              {isLoadingCeeprintoEvents ? (
+                <div className="p-4 text-center text-neutral-400 text-xs">
+                  Connecting to Ceeprinto servers in Karachi...
+                </div>
+              ) : ceeprintoOrderEvents && ceeprintoOrderEvents.length > 0 ? (
+                <div className="space-y-1.5 pt-1">
+                  {ceeprintoOrderEvents.map((evt, idx) => (
+                    <div key={idx} className="flex items-center justify-between p-2 bg-neutral-900 rounded-xs border border-neutral-800">
+                      <span className="text-purple-300 font-bold uppercase text-[11px]">{evt.event || 'Update'}</span>
+                      <span className="text-neutral-500 text-[10px]">{evt.at ? new Date(evt.at).toLocaleString() : 'Just now'}</span>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="p-3 text-neutral-500 text-center text-[11px]">
+                  Order received by Ceeprinto. Printing queue in progress.
+                </div>
+              )}
+            </div>
+
+            {/* Modal Actions */}
+            <div className="flex justify-between items-center pt-2 border-t border-neutral-800">
+              <button
+                type="button"
+                onClick={() => handlePushToCeeprinto(selectedCeeprintoOrder)}
+                disabled={dispatchingCeeprintoId === selectedCeeprintoOrder.id}
+                className="px-3 py-1.5 bg-neutral-900 hover:bg-neutral-800 border border-purple-700 text-purple-300 rounded-xs text-[11px] font-bold uppercase cursor-pointer"
+              >
+                {dispatchingCeeprintoId === selectedCeeprintoOrder.id ? 'Re-dispatching...' : 'Re-Dispatch to Ceeprinto'}
+              </button>
+              <button
+                type="button"
+                onClick={() => setSelectedCeeprintoOrder(null)}
+                className="px-4 py-1.5 bg-neutral-800 hover:bg-neutral-700 text-white rounded-xs uppercase font-bold text-xs cursor-pointer"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Ceeprinto Settings & Sync Modal */}
+      {isCeeprintoSettingsModalOpen && (
+        <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-neutral-950 border border-neutral-800 max-w-lg w-full p-6 rounded-xs space-y-5 font-mono text-xs shadow-2xl">
+            <div className="flex items-center justify-between pb-3 border-b border-neutral-800">
+              <div className="flex items-center gap-2">
+                <Printer className="w-4 h-4 text-purple-400" />
+                <h3 className="font-display font-bold text-white uppercase text-base">
+                  Ceeprinto POD Dropshipping Integration
+                </h3>
+              </div>
+              <button
+                onClick={() => setIsCeeprintoSettingsModalOpen(false)}
+                className="text-neutral-400 hover:text-white cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Account Info Card */}
+            <div className="p-4 bg-purple-950/20 border border-purple-800/80 rounded-xs space-y-2.5">
+              <div className="flex items-center justify-between">
+                <span className="text-neutral-400 uppercase text-[11px] font-bold">API Connection Status:</span>
+                <span className="px-2 py-0.5 text-[10px] font-bold rounded-xs bg-purple-900 text-purple-200 border border-purple-700 flex items-center gap-1">
+                  <Check className="w-3 h-3 text-purple-400" />
+                  Live & Connected
+                </span>
+              </div>
+              <div className="grid grid-cols-2 gap-2 text-neutral-300 pt-1">
+                <div>
+                  <span className="text-neutral-500 text-[10px] block">Account Holder:</span>
+                  <strong className="text-white">Muhammad Talha</strong>
+                </div>
+                <div>
+                  <span className="text-neutral-500 text-[10px] block">Account Email:</span>
+                  <strong className="text-white select-all">revoraofficial57@gmail.com</strong>
+                </div>
+                <div>
+                  <span className="text-neutral-500 text-[10px] block">Connected Shop:</span>
+                  <strong className="text-purple-300">Shop #397 (Revora Motorsport Store)</strong>
+                </div>
+                <div>
+                  <span className="text-neutral-500 text-[10px] block">API Key ID:</span>
+                  <strong className="text-white font-mono text-[11px]">3KE409FARrwvNmjvL2afktFX</strong>
+                </div>
+              </div>
+              <p className="text-[11px] text-neutral-400 leading-relaxed pt-1 border-t border-purple-900/60">
+                Ceeprinto prints, packages, and dispatches your apparel orders across Pakistan under the Revora brand, handling Cash on Delivery (COD) courier collections automatically.
+              </p>
+            </div>
+
+            {/* Live Connection Tester */}
+            <div className="p-4 bg-black border border-neutral-800 rounded-xs space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-white font-bold uppercase text-[11px] flex items-center gap-1.5">
+                  <Sparkles className="w-3.5 h-3.5 text-purple-400" />
+                  <span>Verify API Connectivity</span>
+                </span>
+                <span className="text-[10px] text-neutral-400">REST v2.2.0</span>
+              </div>
+              {ceeprintoTestResult && (
+                <div
+                  className={`p-2.5 rounded-xs border text-[11px] ${
+                    ceeprintoTestResult.success
+                      ? 'bg-purple-950/60 border-purple-800 text-purple-200'
+                      : 'bg-red-950/60 border-red-800 text-red-200'
+                  }`}
+                >
+                  {ceeprintoTestResult.msg}
+                </div>
+              )}
+              <button
+                type="button"
+                onClick={handleTestCeeprintoConnection}
+                disabled={isTestingCeeprinto}
+                className="w-full bg-purple-700 hover:bg-purple-600 text-white py-2 px-3 rounded-xs font-bold uppercase text-xs flex items-center justify-center gap-1.5 cursor-pointer transition-colors shadow-xs"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${isTestingCeeprinto ? 'animate-spin' : ''}`} />
+                <span>{isTestingCeeprinto ? 'Testing Connection...' : 'Test Connection & Sync Ceeprinto'}</span>
+              </button>
+            </div>
+
+            {/* Footer Close */}
+            <div className="flex justify-end pt-1 border-t border-neutral-800">
+              <button
+                type="button"
+                onClick={() => setIsCeeprintoSettingsModalOpen(false)}
                 className="px-4 py-1.5 bg-neutral-800 hover:bg-neutral-700 text-white rounded-xs uppercase font-bold text-xs cursor-pointer"
               >
                 Close

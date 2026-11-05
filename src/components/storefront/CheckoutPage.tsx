@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { useStore } from '../../context/StoreContext';
 import { PaymentMethodType, PaymentProof, Order, BankAccountItem } from '../../types';
-import { getAllDeliveryRules, updateOrderEmailStatus } from '../../services/storage';
+import { getAllDeliveryRules, updateOrderEmailStatus, updateOrderCeeprintoStatus } from '../../services/storage';
 import { sendOrderConfirmationEmail } from '../../services/gmailService';
+import { dispatchOrderToCeeprinto } from '../../services/ceeprintoService';
 import { getCurrentUser } from '../../services/gmailAuth';
 import { GoogleSignInButton } from '../common/GoogleSignInButton';
 import {
@@ -386,6 +387,37 @@ export const CheckoutPage: React.FC<CheckoutPageProps> = ({
         } catch (emailErr: any) {
           console.warn('Gmail sending error:', emailErr);
           updateOrderEmailStatus(createdOrder.id, false, emailErr?.message || 'Email dispatch failed');
+        }
+      }
+
+      // Automated Ceeprinto Print-on-Demand (POD) Dispatch (if auto-dispatch enabled by admin in settings)
+      if (settings.ceeprintoSettings?.enabled && settings.ceeprintoSettings?.autoDispatchOnCheckout) {
+        try {
+          const podRes = await dispatchOrderToCeeprinto(createdOrder, settings.ceeprintoSettings);
+          if (podRes.success && podRes.orderId) {
+            updateOrderCeeprintoStatus(createdOrder.id, {
+              ceeprintoOrderId: podRes.orderId,
+              ceeprintoShopId: settings.ceeprintoSettings.shopId,
+              ceeprintoStatus: podRes.order?.status || 'submitted',
+            });
+            createdOrder.ceeprintoOrderId = podRes.orderId;
+            createdOrder.ceeprintoShopId = settings.ceeprintoSettings.shopId;
+            createdOrder.ceeprintoStatus = podRes.order?.status || 'submitted';
+            createdOrder.ceeprintoDispatchedAt = new Date().toISOString();
+          } else {
+            updateOrderCeeprintoStatus(createdOrder.id, {
+              ceeprintoError: podRes.error || 'Auto-dispatch to Ceeprinto failed',
+              ceeprintoStatus: 'failed',
+            });
+            createdOrder.ceeprintoError = podRes.error || 'Auto-dispatch to Ceeprinto failed';
+            createdOrder.ceeprintoStatus = 'failed';
+          }
+        } catch (podErr: any) {
+          console.warn('Ceeprinto auto-dispatch error:', podErr);
+          updateOrderCeeprintoStatus(createdOrder.id, {
+            ceeprintoError: podErr?.message || 'Ceeprinto auto-dispatch request failed',
+            ceeprintoStatus: 'failed',
+          });
         }
       }
 

@@ -209,6 +209,14 @@ export interface Order {
   emailSentAt?: string;
   emailError?: string;
   gmailMessageId?: string;
+  // Ceeprinto POD Fulfillment tracking
+  ceeprintoOrderId?: number;
+  ceeprintoShopId?: number;
+  ceeprintoStatus?: string;
+  ceeprintoDispatchedAt?: string;
+  ceeprintoTrackingNumber?: string;
+  ceeprintoCourier?: string;
+  ceeprintoError?: string;
 }
 
 export interface CustomerAccount {
@@ -351,6 +359,16 @@ export interface StoreSettings {
     isConnected: boolean;
     userEmail?: string;
     lastConnectedAt?: string;
+  };
+  ceeprintoSettings?: {
+    apiKey: string;
+    shopId: number;
+    shopName: string;
+    autoDispatchOnCheckout: boolean;
+    enabled: boolean;
+    lastTestedAt?: string;
+    accountEmail?: string;
+    accountName?: string;
   };
 }
 
